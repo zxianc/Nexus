@@ -1,0 +1,25 @@
+# Build
+build/
+out/
+*.o
+*.so
+*.a
+*.apk
+*.zip
+obj/
+libs/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local / secrets
+*.local
+.env
+*.keystore
+*.jks
