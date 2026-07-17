@@ -1,0 +1,6 @@
+id=ai_audio_hook
+name=AI Audio Hook (audioserver)
+version=v1.0
+versionCode=1
+author=Developer
+description=Hooks into Android's audioserver to intercept and inject PCM audio streams for the AI Call Agent.
