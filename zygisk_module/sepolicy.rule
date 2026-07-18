@@ -1,0 +1,2 @@
+# Magisk magiskpolicy syntax: no colons, no "self"
+allow audioserver audioserver process execmem

@@ -49,6 +49,8 @@ copy /Y cpp\build\inject out\bin\
 copy /Y module.prop out\
 copy /Y service.sh out\
 if exist customize.sh copy /Y customize.sh out\
+if exist sepolicy.rule copy /Y sepolicy.rule out\
+if exist post-fs-data.sh copy /Y post-fs-data.sh out\
 
 echo [INFO] Pack zip with forward slashes (Python)...
 python pack_zip.py
