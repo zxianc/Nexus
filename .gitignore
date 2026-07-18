@@ -10,6 +10,9 @@ obj/
 libs/
 .externalNativeBuild/
 .cxx/
+zygisk_module/cpp/build32/
+zygisk_module/cpp/build64/
+tmp/
 
 # Magisk staged overlay trees (built native binaries)
 magisk_module/system/

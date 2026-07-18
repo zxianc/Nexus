@@ -1,4 +1,4 @@
-// arm64 remote dlopen injector â€?resolve symbols via local dlsym + base rebase.
+// Remote dlopen injector ? arm64 and arm32 (separate binaries).
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,7 +27,24 @@
 #define NT_PRSTATUS 1
 #endif
 
+#if defined(__aarch64__)
 using regs_t = user_pt_regs;
+#elif defined(__arm__)
+// Compat layout used by Android arm32 NT_PRSTATUS.
+struct regs_t {
+    long uregs[18];
+};
+#define ARM_r0  uregs[0]
+#define ARM_r1  uregs[1]
+#define ARM_r2  uregs[2]
+#define ARM_r3  uregs[3]
+#define ARM_sp  uregs[13]
+#define ARM_lr  uregs[14]
+#define ARM_pc  uregs[15]
+#define ARM_cpsr uregs[16]
+#else
+#error "unsupported arch"
+#endif
 
 static bool ptrace_getregs(pid_t pid, regs_t *regs) {
     iovec iov{regs, sizeof(*regs)};
@@ -41,7 +58,6 @@ static bool ptrace_setregs(pid_t pid, regs_t *regs) {
 
 static bool wait_stop(pid_t pid, int *out_status = nullptr) {
     int status = 0;
-    // Avoid hanging forever if the remote call never traps.
     alarm(5);
     pid_t w = waitpid(pid, &status, __WALL);
     alarm(0);
@@ -91,7 +107,6 @@ static bool already_injected(pid_t pid, const char *needle) {
     return hit;
 }
 
-// Lowest mapped address of a library (ELF load bias proxy).
 static uintptr_t module_base(pid_t pid, const char *lib_substr) {
     char path[64];
     snprintf(path, sizeof(path), "/proc/%d/maps", pid);
@@ -109,7 +124,6 @@ static uintptr_t module_base(pid_t pid, const char *lib_substr) {
     return best;
 }
 
-// Rebase a local function pointer into the target process.
 static uintptr_t local_to_remote(pid_t pid, void *local_fn) {
     if (!local_fn) return 0;
     Dl_info info{};
@@ -123,7 +137,6 @@ static uintptr_t local_to_remote(pid_t pid, void *local_fn) {
     uintptr_t local_base = reinterpret_cast<uintptr_t>(info.dli_fbase);
     uintptr_t remote_base = module_base(pid, fname);
     if (!remote_base) {
-        // Fallback: match longer path fragment
         remote_base = module_base(pid, info.dli_fname);
     }
     if (!remote_base) {
@@ -136,7 +149,7 @@ static uintptr_t local_to_remote(pid_t pid, void *local_fn) {
     return remote;
 }
 
-// Find a BRK #0 (0xD4200000) in libc exec mapping, else 0 (SIGSEGV on return).
+#if defined(__aarch64__)
 static uintptr_t find_brk_gadget(pid_t pid) {
     char path[64];
     snprintf(path, sizeof(path), "/proc/%d/maps", pid);
@@ -154,7 +167,7 @@ static uintptr_t find_brk_gadget(pid_t pid) {
             errno = 0;
             long word = ptrace(PTRACE_PEEKTEXT, pid, start + off, nullptr);
             if (errno) break;
-            if (static_cast<uint32_t>(word) == 0xD4200000u) { // BRK #0
+            if (static_cast<uint32_t>(word) == 0xD4200000u) {
                 gadget = start + off;
                 break;
             }
@@ -164,50 +177,12 @@ static uintptr_t find_brk_gadget(pid_t pid) {
     fclose(fp);
     return gadget;
 }
-
-static long remote_call(pid_t pid, uintptr_t func, uintptr_t ret_addr,
-                        uintptr_t a0 = 0, uintptr_t a1 = 0, uintptr_t a2 = 0,
-                        uintptr_t a3 = 0, uintptr_t a4 = 0, uintptr_t a5 = 0) {
-    regs_t backup{}, regs{};
-    if (!ptrace_getregs(pid, &backup)) {
-        LOGE("GETREGSET failed: %s", strerror(errno));
-        return -1;
-    }
-    regs = backup;
-    regs.regs[0] = a0;
-    regs.regs[1] = a1;
-    regs.regs[2] = a2;
-    regs.regs[3] = a3;
-    regs.regs[4] = a4;
-    regs.regs[5] = a5;
-    regs.regs[30] = ret_addr; // LR
-    regs.pc = func;
-    regs.sp &= ~0xFULL;
-
-    if (!ptrace_setregs(pid, &regs)) {
-        LOGE("SETREGSET failed: %s", strerror(errno));
-        return -1;
-    }
-    if (ptrace(PTRACE_CONT, pid, nullptr, nullptr) < 0) {
-        LOGE("PTRACE_CONT failed: %s", strerror(errno));
-        return -1;
-    }
-    int status = 0;
-    if (!wait_stop(pid, &status)) {
-        LOGE("wait_stop failed");
-        return -1;
-    }
-    if (!ptrace_getregs(pid, &regs)) {
-        LOGE("GETREGSET after call failed");
-        return -1;
-    }
-    long ret = static_cast<long>(regs.regs[0]);
-    LOGI("remote_call func=%" PRIxPTR " sig=%d pc=%" PRIxPTR " x0=%ld",
-         func, WSTOPSIG(status), static_cast<uintptr_t>(regs.pc), ret);
-    // Restore original context
-    ptrace_setregs(pid, &backup);
-    return ret;
+#else
+static uintptr_t find_brk_gadget(pid_t) {
+    // ARM32: use LR=0 return trap (same as arm64 fallback).
+    return 0;
 }
+#endif
 
 static bool remote_write(pid_t pid, uintptr_t addr, const void *data, size_t len) {
     iovec local{const_cast<void *>(data), len};
@@ -227,6 +202,80 @@ static bool remote_write(pid_t pid, uintptr_t addr, const void *data, size_t len
         }
     }
     return true;
+}
+
+static long remote_call(pid_t pid, uintptr_t func, uintptr_t ret_addr,
+                        uintptr_t a0 = 0, uintptr_t a1 = 0, uintptr_t a2 = 0,
+                        uintptr_t a3 = 0, uintptr_t a4 = 0, uintptr_t a5 = 0) {
+    regs_t backup{}, regs{};
+    if (!ptrace_getregs(pid, &backup)) {
+        LOGE("GETREGSET failed: %s", strerror(errno));
+        return -1;
+    }
+    regs = backup;
+#if defined(__aarch64__)
+    regs.regs[0] = a0;
+    regs.regs[1] = a1;
+    regs.regs[2] = a2;
+    regs.regs[3] = a3;
+    regs.regs[4] = a4;
+    regs.regs[5] = a5;
+    regs.regs[30] = ret_addr;
+    regs.pc = func;
+    regs.sp &= ~0xFULL;
+#else
+    // ARM EABI: r0-r3 + stack for 5th/6th (mmap needs fd/offset on stack).
+    regs.ARM_r0 = static_cast<long>(a0);
+    regs.ARM_r1 = static_cast<long>(a1);
+    regs.ARM_r2 = static_cast<long>(a2);
+    regs.ARM_r3 = static_cast<long>(a3);
+    regs.ARM_lr = static_cast<long>(ret_addr);
+    regs.ARM_pc = static_cast<long>(func);
+    if (func & 1) {
+        regs.ARM_cpsr |= 0x20; // Thumb
+        regs.ARM_pc &= ~1L;
+    } else {
+        regs.ARM_cpsr &= ~0x20L;
+    }
+    regs.ARM_sp &= ~7L;
+    {
+        uint32_t stack_args[2] = {static_cast<uint32_t>(a4), static_cast<uint32_t>(a5)};
+        regs.ARM_sp -= 8;
+        if (!remote_write(pid, static_cast<uintptr_t>(regs.ARM_sp), stack_args, sizeof(stack_args))) {
+            LOGE("remote_write stack args failed");
+            return -1;
+        }
+    }
+#endif
+
+    if (!ptrace_setregs(pid, &regs)) {
+        LOGE("SETREGSET failed: %s", strerror(errno));
+        return -1;
+    }
+    if (ptrace(PTRACE_CONT, pid, nullptr, nullptr) < 0) {
+        LOGE("PTRACE_CONT failed: %s", strerror(errno));
+        return -1;
+    }
+    int status = 0;
+    if (!wait_stop(pid, &status)) {
+        LOGE("wait_stop failed");
+        return -1;
+    }
+    if (!ptrace_getregs(pid, &regs)) {
+        LOGE("GETREGSET after call failed");
+        return -1;
+    }
+#if defined(__aarch64__)
+    long ret = static_cast<long>(regs.regs[0]);
+    LOGI("remote_call func=%" PRIxPTR " sig=%d pc=%" PRIxPTR " x0=%ld",
+         func, WSTOPSIG(status), static_cast<uintptr_t>(regs.pc), ret);
+#else
+    long ret = regs.ARM_r0;
+    LOGI("remote_call func=%" PRIxPTR " sig=%d pc=%" PRIxPTR " r0=%ld",
+         func, WSTOPSIG(status), static_cast<uintptr_t>(regs.ARM_pc), ret);
+#endif
+    ptrace_setregs(pid, &backup);
+    return ret;
 }
 
 bool inject_library(pid_t pid, const char *lib_path) {
@@ -251,12 +300,10 @@ bool inject_library(pid_t pid, const char *lib_path) {
 
     void *local_mmap = dlsym(RTLD_DEFAULT, "mmap");
     void *local_dlopen = dlsym(RTLD_DEFAULT, "dlopen");
-    // Android 8+ sometimes prefers android_dlopen_ext; keep dlopen first.
     uintptr_t mmap_addr = local_to_remote(pid, local_mmap);
     uintptr_t dlopen_addr = local_to_remote(pid, local_dlopen);
     uintptr_t ret_gadget = find_brk_gadget(pid);
     if (!ret_gadget) {
-        // LR=0 â†?SIGSEGV on return; x0 still holds the callee return value.
         ret_gadget = 0;
         LOGI("BRK gadget not found, using LR=0");
     } else {
@@ -279,7 +326,7 @@ bool inject_library(pid_t pid, const char *lib_path) {
         static_cast<uintptr_t>(-1), 0));
 
     if (remote_buf == 0 || remote_buf == static_cast<uintptr_t>(-1)) {
-        LOGE("remote mmap failed (x0=%" PRIxPTR ")", remote_buf);
+        LOGE("remote mmap failed (ret=%" PRIxPTR ")", remote_buf);
         ptrace(PTRACE_DETACH, pid, nullptr, nullptr);
         return false;
     }
@@ -296,7 +343,6 @@ bool inject_library(pid_t pid, const char *lib_path) {
 
     bool ok = already_injected(pid, "libai_hook.so");
     if (!ok && handle != 0) {
-        // handle non-zero but maps not yet updated? still treat as success
         ok = true;
     }
 

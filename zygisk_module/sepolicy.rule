@@ -1,2 +1,11 @@
 # Magisk magiskpolicy syntax: no colons, no "self"
 allow audioserver audioserver process execmem
+allow hal_audio_default hal_audio_default process execmem
+allow hal_audio_default system_file file { read open getattr map execute execute_no_trans }
+allow hal_audio_default system_lib_file file { read open getattr map execute execute_no_trans }
+allow hal_audio_default vendor_file file { read open getattr map execute execute_no_trans }
+# PCM dump for Round-8 listen-back
+allow hal_audio_default vendor_data_file dir { search write add_name create getattr open read }
+allow hal_audio_default vendor_data_file file { create open write getattr setattr append read }
+allow hal_audio_default shell_data_file dir { search write add_name create getattr open read }
+allow hal_audio_default shell_data_file file { create open write getattr setattr append read }
