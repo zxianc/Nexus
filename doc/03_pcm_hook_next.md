@@ -12,9 +12,16 @@
 
 ## ⏳ 1.D UDS → Go（当前）
 
-- HAL 侧：通话中把 PCM 帧写入 Unix Domain Socket（替代/并行落盘）  
-- Go 侧：Termux/守护进程 `recv` → 缓冲 → 后续 STT  
-- SELinux：`hal_audio_default` 对 UDS 的 create/connect/write  
+- Socket：`/data/vendor/ai_hook/pcm.sock`
+- 协议：16 字节头 `APCM` + rate(u32) + ch(u16) + bits(u16) + padding，随后 raw s16le
+- HAL：通话中 `connect` 并推送（无接收端则仅落盘）
+- 接收端：`daemon/pcm_recv`（Go）
+
+```bash
+cd daemon/pcm_recv && go build -o pcm_recv .
+adb push pcm_recv /data/local/tmp/
+adb shell 'su -c "/data/local/tmp/pcm_recv -dump /data/vendor/ai_hook/uds_dump.pcm"'
+```
 
 ## 可选并行：1.E incall-music TX
 

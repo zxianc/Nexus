@@ -2,13 +2,19 @@
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 #include <atomic>
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
 #include "dobby.h"
+
+#define PCM_SOCK_PATH "/data/vendor/ai_hook/pcm.sock"
+#define APCM_MAGIC 0x4D435041u /* 'APCM' LE */
 
 #define LOG_TAG "AI_Audio_Hook"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -182,6 +188,71 @@ static int open_dump_fd() {
     return -1;
 }
 
+// 1.D: connect to Go receiver; send 16-byte header then raw s16le frames.
+static int uds_connect_send_hdr(unsigned rate, unsigned channels) {
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        LOGI("uds socket errno=%d", errno);
+        return -1;
+    }
+    struct sockaddr_un addr {};
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, PCM_SOCK_PATH, sizeof(addr.sun_path) - 1);
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        LOGI("uds connect(%s) errno=%d (is pcm_recv running?)", PCM_SOCK_PATH, errno);
+        close(fd);
+        return -1;
+    }
+    unsigned char hdr[16] = {};
+    auto put_u32 = [](unsigned char *p, unsigned v) {
+        p[0] = (unsigned char)(v);
+        p[1] = (unsigned char)(v >> 8);
+        p[2] = (unsigned char)(v >> 16);
+        p[3] = (unsigned char)(v >> 24);
+    };
+    auto put_u16 = [](unsigned char *p, unsigned v) {
+        p[0] = (unsigned char)(v);
+        p[1] = (unsigned char)(v >> 8);
+    };
+    put_u32(hdr + 0, APCM_MAGIC);
+    put_u32(hdr + 4, rate);
+    put_u16(hdr + 8, channels);
+    put_u16(hdr + 10, 16);
+    ssize_t w = write(fd, hdr, sizeof(hdr));
+    if (w != (ssize_t)sizeof(hdr)) {
+        LOGI("uds hdr write rc=%zd errno=%d", w, errno);
+        close(fd);
+        return -1;
+    }
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    }
+    LOGI("uds connected fd=%d %s %uHz ch%u", fd, PCM_SOCK_PATH, rate, channels);
+    return fd;
+}
+
+static size_t uds_send_all(int fd, const void *buf, size_t len) {
+    if (fd < 0) {
+        return 0;
+    }
+    const char *p = (const char *)buf;
+    size_t off = 0;
+    while (off < len) {
+        ssize_t w = write(fd, p + off, len - off);
+        if (w > 0) {
+            off += (size_t)w;
+            continue;
+        }
+        if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+            break; // drop remainder this period if peer slow
+        }
+        LOGI("uds write fail errno=%d sent=%zu/%zu", errno, off, len);
+        break;
+    }
+    return off;
+}
+
 static void *round7_incall_thread(void *) {
     usleep(400 * 1000);
     if (!g_in_voice.load()) {
@@ -263,11 +334,15 @@ static void *round7_incall_thread(void *) {
     }
 
     int dump_fd = open_dump_fd();
+    int uds_fd = uds_connect_send_hdr(cfg.rate, cfg.channels);
     unsigned bytes = cfg.period_size * cfg.channels * 2;
     void *buf = malloc(bytes);
     if (!buf) {
         if (dump_fd >= 0) {
             close(dump_fd);
+        }
+        if (uds_fd >= 0) {
+            close(uds_fd);
         }
         pcm_close(pcm);
         mixer_close(mixer);
@@ -277,6 +352,7 @@ static void *round7_incall_thread(void *) {
     int hits = 0, nonzero = 0;
     int max_l = 0, max_r = 0;
     size_t total_bytes = 0;
+    size_t uds_bytes = 0;
     while (g_in_voice.load()) {
         int rc = pcm_read(pcm, buf, bytes);
         if (rc < 0) {
@@ -289,6 +365,9 @@ static void *round7_incall_thread(void *) {
             if (w > 0) {
                 total_bytes += (size_t)w;
             }
+        }
+        if (uds_fd >= 0) {
+            uds_bytes += uds_send_all(uds_fd, buf, bytes);
         }
         auto *p = (const int16_t *)buf;
         int frames = (int)(bytes / 4); // stereo s16
@@ -317,10 +396,13 @@ static void *round7_incall_thread(void *) {
         }
     }
 
-    LOGI("Round-8 DONE hits=%d nz=%d maxL=%d maxR=%d dumped=%zu rate=%u ch=2 s16le", hits, nonzero,
-         max_l, max_r, total_bytes, cfg.rate);
+    LOGI("Round-8 DONE hits=%d nz=%d maxL=%d maxR=%d dumped=%zu uds=%zu rate=%u ch=2 s16le", hits,
+         nonzero, max_l, max_r, total_bytes, uds_bytes, cfg.rate);
     if (dump_fd >= 0) {
         close(dump_fd);
+    }
+    if (uds_fd >= 0) {
+        close(uds_fd);
     }
     free(buf);
     pcm_close(pcm);
@@ -417,7 +499,7 @@ static void install_hooks() {
     fn_stop_incall = (stop_incall_fn_t)resolve_sym(prim, "platform_stop_incall_recording_usecase");
     fn_voice_sid = (voice_sid_fn_t)resolve_sym(prim, "voice_get_active_session_id");
 
-    LOGI("HAL Round-8 hooks done (dump via vendor_data_file /data/vendor/ai_hook)");
+    LOGI("HAL Round-8+1.D hooks done (incall dump + UDS %s)", PCM_SOCK_PATH);
 }
 
 static void *main_thread(void *) {
