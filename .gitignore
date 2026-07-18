@@ -11,6 +11,10 @@ libs/
 .externalNativeBuild/
 .cxx/
 
+# Magisk staged overlay trees (built native binaries)
+magisk_module/system/
+zygisk_module/out/
+
 # IDE
 .idea/
 .vscode/

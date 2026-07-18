@@ -1,4 +1,3 @@
-#include <jni.h>
 #include <android/log.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -6,18 +5,16 @@
 #define LOG_TAG "AI_Audio_Hook"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-// 当我们的 .so 文件被成功注入或加载到 audioserver 进程时，这个函数会自动执行
+// 核心业务线程
 void* main_thread(void* arg) {
-    LOGI("成功潜入 audioserver 进程！当前 PID: %d", getpid());
-    
-    // TODO: 在这里初始化 Dobby 框架，开始 Hook AudioRecord::read 和 AudioTrack::write
-    
+    LOGI("【Native 注入成功】已潜入 audioserver 进程！当前 PID: %d", getpid());
+    // 后续我们将在这里初始化 Dobby
     return nullptr;
 }
 
-// C++ 动态库的构造函数属性，确保库一被加载，立刻新建一个线程运行我们的逻辑
-__attribute__((constructor))
-void on_library_loaded() {
+// 神奇的构造函数宏，只要库被加载，立刻自动执行
+__attribute__((constructor)) void on_load() {
     pthread_t thread;
+    // 必须开新线程，否则会卡死原本 audioserver 的主流程
     pthread_create(&thread, nullptr, main_thread, nullptr);
 }

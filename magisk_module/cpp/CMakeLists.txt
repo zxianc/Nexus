@@ -1,11 +1,9 @@
-cmake_minimum_required(VERSION 3.10)
-project(ai_audio_hook)
+cmake_minimum_required(VERSION 3.10.2)
+project(AI_Audio_Hook)
 
-# Build Dobby as static lib and link into ai_hook.so (single .so for Magisk)
-set(DOBBY_GENERATE_SHARED OFF CACHE BOOL "" FORCE)
-set(DOBBY_DEBUG OFF CACHE BOOL "" FORCE)
-add_subdirectory(Dobby)
+# 1. 编译替身可执行文件 (生成名字就叫 audioserver)
+add_executable(audioserver wrapper.cpp)
 
+# 2. 编译我们要注入的动态库 (生成 libai_hook.so)
 add_library(ai_hook SHARED audio_hook.cpp)
-target_include_directories(ai_hook PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Dobby/include)
-target_link_libraries(ai_hook dobby_static log)
+target_link_libraries(ai_hook log)

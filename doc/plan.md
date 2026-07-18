@@ -1,102 +1,170 @@
 # 个人 AI 通信助理 (AI-Call-Agent) 技术落地白皮书
 
-**版本:** v1.2 (修正 Native 注入方案)
-**日期:** 2026-07-18
-**作者:** Developer
-**目标环境:** Android 16 (LineageOS 23.2), 骁龙 865, 已 Root (纯 Magisk 环境)
+**版本:** v1.4（Zygisk 注入已验证，进入 Hook 点选型）  
+**日期:** 2026-07-18  
+**作者:** Developer  
+**目标环境:** 备用 Android 机（实装验证：OnePlus 8T / 骁龙 865，Magisk + Zygisk）
+
+**相关文档：**
+
+- 进展与操作验证（本文配套）：[`doc/02_zygisk_inject_progress.md`](02_zygisk_inject_progress.md)
+- 旧 LD_PRELOAD 失败复盘：[`doc/Magisk_Injection_Log.md`](Magisk_Injection_Log.md)
+- 模块侧简版说明：[`zygisk_module/doc/README.md`](../zygisk_module/doc/README.md)
 
 ---
 
 ## 1. 系统架构概述
 
-本项目旨在打造一个完全运行在备用安卓机上的“AI 电话接听与短信摘要”中枢。
+本项目旨在打造一个完全运行在备用安卓机上的「AI 电话接听与短信摘要」中枢。
 
-核心设计理念：**“底层劫持音频、端侧极致处理、云端高智商推理、微信无缝触达”**。
+核心设计理念：**底层劫持音频、端侧极致处理、云端高智商推理、微信无缝触达**。
 
 系统分为三大核心模块：
-1. **AudioHook 模块 (C++ / Magisk)**：一个纯 Native C++ 动态库。通过 Magisk 的挂载特性与 `LD_PRELOAD` 机制注入到系统的 `/system/bin/audioserver` 进程中。负责剥夺系统的麦克风控制权，实现电话信令级双向音频的无损拦截与注入。
-2. **AI 调度守护进程 (Go / Termux)**：系统的中枢神经。负责接管 AudioHook 传来的音频，调度本地 STT/TTS 引擎，并与云端 DeepSeek API 进行流式交互。
-3. **微信推送层 (企业微信 API)**：电话结束后，负责将 AI 总结的对话摘要以图文卡片的形式，推送到主力的个人微信中。
+
+1. **AudioHook 模块（C++ / Magisk Zygisk）**  
+   动态库 `libai_hook.so`，由 Zygisk companion / `service.sh` 通过 **ptrace + remote dlopen** 注入 `/system/bin/audioserver`。负责电话信令级双向 PCM 拦截与注入。  
+   **当前：进程注入已在真机验证通过；函数级 Hook 尚未开始。**
+
+2. **AI 调度守护进程（Go / Termux）**  
+   接管 AudioHook 音频，调度本地 STT/TTS，与云端 DeepSeek 流式交互。
+
+3. **微信推送层（企业微信 API）**  
+   通话结束后推送摘要卡片到主力个人微信。
 
 ---
 
 ## 2. 核心技术栈与选型
 
-*   **OS 层权限:** Magisk 27.0+ (无需开启 Zygisk)
-*   **Native Hook 框架:** [Dobby](https://github.com/jmpews/Dobby) (强大的跨平台 Inline Hook 库)
-*   **进程注入方案:** Magisk OverlayFS 挂载 + Wrapper 代理脚本 (`LD_PRELOAD`)
-*   **守护进程语言:** Golang 1.22+ (`linux/arm64` 交叉编译)
-*   **语音转文本 (STT):** [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) + **SenseVoice-Small** (量化版) 
-*   **文本转语音 (TTS):** [Sherpa-ONNX](https://github.com/k2-fsa/sherpa-onnx) + VITS/Piper 中文离线模型
-*   **大语言模型 (LLM):** DeepSeek API (流式请求模式)
-*   **终端触达:** 企业微信自建应用 Webhook
+| 类别 | 选型 | 备注 |
+|------|------|------|
+| Root / 模块框架 | Magisk 27.0+，**必须开启 Zygisk** | 不用换 `audioserver` 二进制 |
+| 进程注入 | Zygisk companion + ptrace remote `dlopen`，`service.sh` 兜底 | 载荷路径：`/system/lib64/libai_hook.so` |
+| Inline Hook | [Dobby](https://github.com/jmpews/Dobby) | **待接入**（注入完成后再做） |
+| 守护进程 | Golang 1.22+（`linux/arm64`） | Termux / 自启 |
+| STT | Sherpa-ONNX + SenseVoice-Small | 待阶段二 |
+| TTS | Sherpa-ONNX + VITS/Piper 中文 | 待阶段二 |
+| LLM | DeepSeek API（`stream: true`） | 待阶段三 |
+| 触达 | 企业微信自建应用 | 待阶段四 |
+
+### 2.1 已废弃方案（勿再走）
+
+- Overlay 替换 `/system/bin/audioserver` + Shell/`LD_PRELOAD`
+- `service.sh` 里 `killall audioserver` 后期望环境变量继承
+- 向 `audioserver` `dlopen(/data/local/tmp/libai_hook.so)`（SELinux 拒绝）
 
 ---
 
-## 3. 详细实施步骤 (The Roadmap)
+## 3. 实施路线与当前进度
 
-### 阶段一：基于 Magisk 与 LD_PRELOAD 的 Native 音频劫持 (The Hook)
-*这是整个项目最困难的深水区，目标是接管电话的上下行音频流。*
+### 阶段一：Native 进入 audioserver 并劫持通话 PCM — **进行中**
 
-1.  **编写 C++ Hook 动态库 (`libai_hook.so`)：** 
-    *   使用 C++ 编写核心拦截逻辑，引入 Dobby 库。
-    *   在库加载的初始化函数（`__attribute__((constructor))`）中启动 Hook 线程。
-2.  **寻找 Hook 点与拦截：**
-    *   **上行 (Mic注入)：** Hook Android HAL 层的 `AudioRecord::read` 或对应 HAL 接口。当系统试图读取物理麦克风数据发给基带时，拦截该请求，并用从 Go 进程接收到的 TTS PCM 数据进行覆盖。
-    *   **下行 (Speaker拦截)：** Hook `AudioTrack::write` 或对应 HAL 接口，获取对方的说话声音（PCM 数据）。
-3.  **构建 Magisk 挂载模块与代理注入：** 
-    *   在模块安装脚本中，将 `libai_hook.so` 放置到 `/system/lib64/`。
-    *   编写代理脚本（Wrapper），利用 Magisk 启动机制（如 `post-fs-data.sh`），将 `/system/bin/audioserver` 替换为我们的脚本。
-    *   代理脚本内容设定环境变量 `export LD_PRELOAD=libai_hook.so`，然后拉起真实的 `audioserver` 二进制文件，从而将 C++ 代码强行注入。
-4.  **建立本地通信 IPC：** 
-    *   注入成功的 C++ 代码在 `audioserver` 进程内创建一个 Unix Domain Socket (UDS)（比如 `/dev/socket/ai_audio_sock`）。
-    *   模块通过该 Socket，将对方声音实时 Push 给 Go 进程，并阻塞式 Pull Go 进程发来的注入音频。
+#### 1.A 注入投递（已完成 ✅）
 
-### 阶段二：构建本地控制中枢 (The Go Daemon)
-*将 Go 编译为可执行文件，通过 Termux 部署在手机本地后台长期运行。*
+**目标：** `libai_hook.so` 稳定出现在 `audioserver` 的内存映射中。
 
-1.  **电话状态监控与控制：**
-    *   通过 `su -c "dumpsys telephony.registry"` 或监听 Android 广播 (`android.intent.action.PHONE_STATE`) 获取来电状态。
-    *   实现自动接听逻辑（例如，响铃 3 秒后执行模拟按键 `su -c "input keyevent 5"`）。
-2.  **集成 Sherpa-ONNX (STT & TTS)：**
-    *   使用 Sherpa-ONNX 提供的 Go 语言绑定 API，避免外部进程调用开销。
-    *   加载 SenseVoice-Small 模型用于 STT，加载对应 VITS 模型用于 TTS。
-3.  **音频调度循环 (The Event Loop)：**
-    *   连接 C++ 模块创建的 `/dev/socket/ai_audio_sock`。
-    *   **读循环 (听)：** 从 Socket 持续读取外卖员的音频，送入 SenseVoice-Small 引擎。
-    *   **写循环 (说)：** 将 TTS 生成的 PCM 数据，按照信令要求的时钟速率，平滑写入 Socket 传给 Hook 模块。
+**机制：**
 
-### 阶段三：端云协同的 AI 对话编排 (DeepSeek Integration)
-*让电话具备真正的智慧，实现真人级别的对话延迟。*
+1. Magisk 模块提供 `system/lib64/libai_hook.so`（Overlay）与 `zygisk/arm64-v8a.so`。
+2. `preServerSpecialize` → `connectCompanion()`。
+3. companion / `service.sh` 对进程名 `audioserver` 执行 ptrace remote `dlopen("/system/lib64/libai_hook.so")`。
+4. 库内 `__attribute__((constructor))` 起线程（避免阻塞 audioserver 主循环）。
 
-1.  **VAD 与打断机制 (Interruption Handling)：**
-    *   利用 Sherpa-ONNX 内置的 VAD（静音检测）判断对方是否停止说话，触发大模型思考。
-    *   若在 AI 发声期间检测到对方插嘴，Go 进程立刻清空发送 Buffer，中止 TTS 播放，重新进入监听状态。
-2.  **流式思考 (LLM Streaming)：**
-    *   将 STT 识别出的文本拼接到 Prompt 中，带上下文发送给 `https://api.deepseek.com/v1/chat/completions`。
-    *   **必须开启 `stream: true`**。
-3.  **边想边说 (Pipeline Execution)：**
-    *   Go 进程流式读取 DeepSeek Chunk，按标点符号切分单句。
-    *   切分后立刻送入本地 TTS 引擎，生成后马上注入电话，将首句延迟压缩到极致。
+**操作（开发机）：**
 
-### 阶段四：通话终结与微信推流
-*完美的收尾工作。*
+```bat
+cd zygisk_module
+build.bat
+adb push ai_audio_hook_zygisk.zip /sdcard/Download/
+```
 
-1.  **结束条件判断：** 当 AI 输出特定挂断指令或对方挂断，Go 进程执行物理挂断逻辑。
-2.  **总结对话：** 提取本次通话完整 Transcript，非流式请求 DeepSeek 提取结构化核心信息（如 JSON）。
-3.  **企业微信触达：**
-    *   将结果组装为企业微信 TextCard 格式。
-    *   携带预先配置的 `CorpID` 和 `Secret` 换取 Token，发起 POST 请求推送到主力的个人微信。
+Magisk 安装 zip → 确认 Zygisk 开启 → 重启。
+
+**验证（判定以 maps 为准）：**
+
+```powershell
+adb shell "su -c 'grep libai_hook /proc/\$(pidof audioserver)/maps'"
+adb shell "su -c 'ls -l /system/lib64/libai_hook.so'"
+```
+
+成功样例：maps 中出现带 `r-xp` 的 `/system/lib64/libai_hook.so`。
+
+手动补注入：
+
+```powershell
+adb shell "su -c '/data/adb/modules/ai_audio_hook/bin/inject audioserver /system/lib64/libai_hook.so'"
+```
+
+完整步骤与排障见 [`02_zygisk_inject_progress.md`](02_zygisk_inject_progress.md)。
+
+#### 1.B 定位 Hook 点并拦截 PCM（下一步 ⏳）
+
+**目标：** 在通话场景可靠拿到「对方下行」PCM，并能覆盖「本机上行」PCM。
+
+**原则：**
+
+- 不要先假设一定是 `AudioRecord::read` / `AudioTrack::write`；高通通话路径常走 AudioFlinger / HAL / voice 专用链路。
+- Hook 层级尽量避开错误的 AEC 位置，减少回声（见风险表）。
+- 先做「只读日志 / 计数」证明挂上符号，再做 PCM 替换。
+
+**建议验证顺序：**
+
+1. 接入 Dobby，Hook 一个无害、易确认的符号，logcat 可见。
+2. 通话中对比 maps / 符号，锁定实际读写函数。
+3. 实现下行 capture → UDS；上行 replace ← UDS。
+
+#### 1.C 与 Go 的 IPC（未开始）
+
+- 计划：Unix Domain Socket（如 `/dev/socket/ai_audio_sock` 或模块私有路径，注意 SELinux）。
+- C++：Push 下行 PCM，Pull 上行 TTS PCM（注意时钟与阻塞策略）。
+
+---
+
+### 阶段二：本地 Go 控制中枢 — 未开始
+
+1. 电话状态：`dumpsys telephony.registry` / `PHONE_STATE`；自动接听（如 `input keyevent 5`）。
+2. 集成 Sherpa-ONNX（STT SenseVoice-Small + TTS）。
+3. 事件循环：连 UDS，读对方音频 → STT；写 TTS PCM → Hook。
 
 ---
 
-## 4. 关键风险与调优策略
+### 阶段三：DeepSeek 流式对话 — 未开始
 
-| 风险点 | 影响范围 | 应对策略 |
-| :--- | :--- | :--- |
-| **设备电池鼓包过热** | 硬件安全 | 1. 禁用云端同步等无用服务；2. 安装 `ACC` (Advanced Charging Controller) 模块将电量限制在 50%；3. 考虑拆卸电池改用稳压假电池直供。 |
-| **AEC (回声消除) 崩溃** | 通话质量 | `LD_PRELOAD` Hook 的层级必须位于硬件 AEC 之下，否则对方会听到回声。需要通过反编译和阅读 Android AOSP 源码找准具体的 Hook 函数。 |
-| **安卓休眠杀后台** | 系统稳定性 | 在 LineageOS 电池管理中，赋予 Termux 和 Go Daemon “无限制”权限，必要时开启 Wakelock 保持 CPU 运转。 |
+1. VAD + 打断（清空发送缓冲）。
+2. `stream: true` 请求 DeepSeek。
+3. 按标点切句边合成边注入，压低首包延迟。
 
 ---
-*文档生成完毕。开始你的底层开发之旅吧！*
+
+### 阶段四：挂断与企微推送 — 未开始
+
+1. 挂断条件与物理挂断。
+2. Transcript 总结为结构化信息。
+3. 企业微信 TextCard 推送到主力微信。
+
+---
+
+## 4. 关键风险与调优
+
+| 风险点 | 影响 | 应对 |
+|--------|------|------|
+| 厂商 Overlay / 解压卡死 | 装模块失败 | 手动组装 `/data/adb/modules/ai_audio_hook`；ZIP 用正斜杠打包 |
+| SELinux 拒绝 tmp 路径 | dlopen 返回 0 | 只用 `/system/lib64/libai_hook.so` |
+| 错误 remote call / 符号基址 | mmap 失败或进程挂起 | 使用现行 `inject.cpp`（dlsym 重定位 + LR=0）；避免错误 RET gadget |
+| AEC / Hook 点层级错误 | 回声、无声 | 对照 AOSP/厂商库选点；分场景实测 |
+| 电池发热 | 硬件安全 | ACC 限充、关无用同步、必要时假电池供电 |
+| 休眠杀后台 | Go 守护退出 | 电池白名单 + Wakelock |
+
+---
+
+## 5. 目录与产物索引
+
+| 路径 | 说明 |
+|------|------|
+| `zygisk_module/` | **现行主线** 源码与 `build.bat` |
+| `zygisk_module/ai_audio_hook_zygisk.zip` | 安装包 |
+| `magisk_module/` | 旧实验代码，非主注入路径 |
+| `doc/02_zygisk_inject_progress.md` | 阶段一进展、操作、验证（详） |
+
+---
+
+*v1.4：阶段一「注入」闭环已在真机确认；下一迭代聚焦 Dobby 与通话 PCM Hook 点。*
