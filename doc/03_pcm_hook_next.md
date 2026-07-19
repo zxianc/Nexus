@@ -54,3 +54,27 @@
 - TTS PCM 写入通话上行，对面可听
 - `mix(DL,TTS)` / TTS / DeepSeek：仍未做
 
+### TODO — 独立 Magisk 模块：业务侧资产（未做，不急）
+
+与 HAL 注入模块 **`ai_audio_hook` 解耦**，另做模块（暂名 `nexus_runtime` / `nexus_stt`）管理用户态资产，建议根目录例如 `/data/adb/nexus_stt/`（或模块自有 `files/`）：
+
+- [ ] `sherpa-onnx-offline` + `libonnxruntime.so` + SenseVoice 模型
+- [ ] Go：`ai_call`（及后续 daemon）
+- [ ] （后续）**TTS** 引擎/模型与其它业务数据
+- [ ] （可选）开机自启业务进程；**不**碰 inject / UDS server / HAL so
+
+原则：驱动+UDS 仍只由 `ai_audio_hook` 负责；ASR/TTS/Go 只消费 `pcm.sock`，资产生命周期单独版本化。
+
+### 定稿 — 采集 vs 业务（2026-07-19）
+
+- **`ai_audio_hook`（HAL）：** 通话接通就采 DL → 落盘 + UDS；**不做**按卡/模式开关采集，**暂不考虑**为省电关旁路。
+- **业务层（Go / 策略服务）：** 决定用不用：AI 处理 / 丢弃 / 不启 STT；双卡（卡1 自动接听 AI、卡2 拒接或放行人工）也在业务层，**不**进 HAL。
+- 以后若真要省电，再加可选「整段旁路总开关」作优化，不作为默认设计。
+
+### 定稿 — 短信转发（未做）
+
+- **不要**做进 `ai_audio_hook`（音频注入与短信无关）。
+- **另做**短信侧能力（独立 Magisk 模块或独立组件）：只负责收/窥短信事件并交给用户态。
+- **Go 统一配置与编排**（哪张卡转发、摘要/推企微等）；各模块解耦，只通过约定 IPC/文件/ socket 对接业务 daemon。
+- 可与「业务侧资产模块」同仓不同模块，或短信单独模块——**均不与 HAL 耦合**。
+

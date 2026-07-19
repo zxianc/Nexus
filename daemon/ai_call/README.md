@@ -54,13 +54,17 @@ adb shell 'su -c "mkdir -p /data/local/tmp/nexus_stt/sense-voice /data/local/tmp
 
 ### 2) `sherpa-onnx-offline` arm64 可执行文件
 
-用官方 Android arm64 构建产物中的 `sherpa-onnx-offline`（见 [Build for Android](https://k2-fsa.github.io/sherpa/onnx/android/build-sherpa-onnx.html)），推到：
+**现行：本机 NDK 手动交叉编译**（非 Linux aarch64 预编译包）。完整步骤见  
+[`doc/05_sherpa_android_build.md`](../../doc/05_sherpa_android_build.md)，脚本在 `scripts/`。
+
+推到：
 
 ```text
 /data/local/tmp/nexus_stt/sherpa-onnx-offline
+/data/local/tmp/nexus_stt/libonnxruntime.so
 ```
 
-并 `chmod 755`；若动态链接，把依赖 `.so` 放到同目录并设置 `LD_LIBRARY_PATH`。
+`chmod 755`；启动时必须 `LD_LIBRARY_PATH=/data/local/tmp/nexus_stt`。
 
 ### 3) 启动
 

@@ -347,6 +347,27 @@
 - **Magisk 噪声：** `openat zygisk/armeabi-v7a.so: No such file`——zip 仅含 `zygisk/arm64-v8a.so`，32-bit 进程加载 Zygisk companion 时告警；**不影响** `service.sh`→`inject32`→HAL 主线。
 - **结论：** 装模块 + 重启后注入与 UDS **可自动恢复**；`ai_call` 仍需手动启动。下一 **1.E TX**。
 
+## 2026-07-19 — 文档：sherpa CLI 为 NDK 手编
+
+- **结论：** 真机 `sherpa-onnx-offline` 由 Windows + NDK r30 交叉编译（sherpa **v1.13.4**，API **28** + ORT **1.27.0**）；模型用官方 SenseVoice int8 包。
+- **新增：** [`05_sherpa_android_build.md`](05_sherpa_android_build.md)；脚本归入 `daemon/ai_call/scripts/`。
+
+## 2026-07-19 — TODO：业务侧独立 Magisk 模块（暂不做）
+
+- **决定：** sherpa / Go / 后续 TTS 等用户态资产 **不**塞进 `ai_audio_hook`；另开 Magisk 模块管理，与 HAL+UDS 解耦。
+- **记在：** [`03_pcm_hook_next.md`](03_pcm_hook_next.md)、[`plan.md`](plan.md)。现行仍用 `/data/local/tmp/nexus_stt` 调试。
+
+## 2026-07-19 — 定稿：HAL 只采集，用不用交给业务层
+
+- **HAL：** 接通即采 DL（UDS+落盘）；不做按卡开关采集；暂不考虑省电关旁路。
+- **业务：** 是否 AI/STT、双卡策略（接/拒/人工）均在 Go/策略服务。
+- **文档：** `03_pcm_hook_next.md` / `plan.md` / `04_architecture_runtime.md` 已记。
+
+## 2026-07-19 — 定稿：短信转发另模块 + Go 编排（暂不做）
+
+- **不**做进 `ai_audio_hook`；短信独立模块/组件，Go 统一配置（含按卡策略），与 HAL/STT 解耦。
+- **记在：** `03_pcm_hook_next.md` / `plan.md`。
+
 <!-- 新条目模板（复制到文末填写）：
 
 ## YYYY-MM-DD — 标题

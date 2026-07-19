@@ -12,6 +12,7 @@
 | [`02_zygisk_inject_progress.md`](02_zygisk_inject_progress.md) | 注入阶段操作手册 | 可小改验证命令 |
 | [`03_pcm_hook_next.md`](03_pcm_hook_next.md) | 当前里程碑 | 跟当前阶段同步 |
 | [`04_architecture_runtime.md`](04_architecture_runtime.md) | **现行实现：方案 / 数据流 / 线程** | 架构变更时改 |
+| [`05_sherpa_android_build.md`](05_sherpa_android_build.md) | sherpa CLI **NDK 手编**过程 | 升级 sherpa/ORT 时改 |
 | [`../zygisk_module/doc/README.md`](../zygisk_module/doc/README.md) | 模块怎么编/装/验 | 跟代码同步 |
 
 ## 增量更新约定

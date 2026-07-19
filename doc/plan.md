@@ -10,6 +10,7 @@
 - 过程日志（**增量追加**）：[`doc/dev_journal.md`](dev_journal.md)
 - 下一里程碑清单：[`doc/03_pcm_hook_next.md`](03_pcm_hook_next.md)
 - **现行实现（数据流 / 线程）：** [`doc/04_architecture_runtime.md`](04_architecture_runtime.md)
+- **sherpa NDK 手编：** [`doc/05_sherpa_android_build.md`](05_sherpa_android_build.md)
 - 注入/Dobby 详记：[`doc/02_zygisk_inject_progress.md`](02_zygisk_inject_progress.md)
 - 旧 LD_PRELOAD 复盘：[`doc/Magisk_Injection_Log.md`](Magisk_Injection_Log.md)
 - 模块手册：[`zygisk_module/doc/README.md`](../zygisk_module/doc/README.md)
@@ -118,11 +119,26 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 - Magisk 装 zip + 重启 → `service.sh` 自动 `inject32` HAL；maps + `pcm.sock` OK
 - `ai_call` **未**自启（仍手动）；Zygisk 缺 `armeabi-v7a.so` 仅告警、不影响主线
 
+#### TODO（未做）：业务侧独立 Magisk 模块
+
+- 与 `ai_audio_hook` **解耦**：另模块托管 sherpa CLI/模型、`ai_call`、后续 **TTS** 等用户态资产（建议 `/data/adb/nexus_stt/`）
+- HAL/UDS/inject **不**并入该模块；详见 [`03_pcm_hook_next.md`](03_pcm_hook_next.md)
+
+#### 定稿：HAL 只采集，用不用交给业务层
+
+- HAL：接通即 DL 旁路（UDS+落盘）；不按卡关采集；**暂不考虑省电关旁路**
+- Go/策略：是否 STT/AI、双卡接听策略等；见 [`03_pcm_hook_next.md`](03_pcm_hook_next.md)
+
+#### 定稿 / TODO：短信转发（未做）
+
+- **不**进 `ai_audio_hook`；另模块/组件负责短信，**Go 统一配置与转发编排**，与 HAL/STT 解耦
+
 ---
 
 ### 阶段二～四
 
 完整 daemon、DeepSeek 流式、企微推送 — 均未开始（内容同前版规划）。
+
 
 ---
 
@@ -149,6 +165,7 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 | `doc/02_zygisk_inject_progress.md` | 注入操作详版 |
 | `doc/03_pcm_hook_next.md` | 当前里程碑 |
 | `doc/04_architecture_runtime.md` | 现行方案 / 数据流 / 线程模型 |
+| `doc/05_sherpa_android_build.md` | sherpa-onnx-offline Android NDK 构建 |
 
 ---
 
