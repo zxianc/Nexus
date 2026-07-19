@@ -49,10 +49,20 @@
 - Magisk 可能报缺 `zygisk/armeabi-v7a.so`（无害）；主线是 `service.sh`+`inject32`
 - **`ai_call` 仍手动**（未进模块自启）
 
-### 1.E incall-music TX — ⏳
+### ✅ 1.E incall-music TX + 本地 TTS — 已完成（2026-07-19 通话听验）
 
-- TTS PCM 写入通话上行，对面可听
-- `mix(DL,TTS)` / TTS / DeepSeek：仍未做
+- 路径：MultiMedia9 + **pcm OUT d23**；格式 **48k mono s16le**；默认静音保活
+- **模型：** `sherpa-onnx-vits-zh-ll`；`ai_call -say` → `tx_inject.pcm`；播完 unlink（每句重写）
+- **听验：** 对面女声「你好能听到嘛」；音色=模型/`-tts-sid`，换模型可换声
+- **下一：** 闭环 STT→LLM→TTS；`mix(DL,TTS)` / DeepSeek 仍未做
+
+### ⏳ STT → LLM → TTS 闭环
+
+- [x] **Echo（无 LLM）：** `-echo-tts`；通话听验已通过（CLI 路径 ~3–4s）
+- [x] **常驻引擎（方案 B）：** `nexus_engine` + `-backend engine`；**跨通话常驻**，模型一次加载；echo 听验通过（勿开通话静音，静音会挡上行含 TTS）
+- [x] **DeepSeek 流式（方案 A）：** `-llm`；STT → SSE → 切句 TTS→TX（待通话听验）
+- [ ] 存档 `mix(DL, TTS)`
+- [ ] （可选）静音麦但仍允许 AI TX
 
 ### TODO — 独立 Magisk 模块：业务侧资产（未做，不急）
 

@@ -2,7 +2,7 @@
 
 HAL DL UDS → 能量 VAD 切句 → **mock** 或 **sherpa-onnx SenseVoice** → `/data/vendor/ai_hook/stt.log`
 
-约定：**STT/TTS 本地**；**LLM 仅 DeepSeek**（本包不接 LLM/TTS）。
+约定：**STT/TTS 本地**；**LLM = DeepSeek 云端**（`-llm` 流式切句 TTS）。
 
 ## 编译（Windows → Android arm64）
 
@@ -78,16 +78,67 @@ adb shell 'su -c "pkill -9 ai_call; export STT_BACKEND=sherpa STT_BIN=/data/loca
 
 **VAD 方案 A：** 无字母/数字的 STT 结果 `DROP`（不写 `stt.log`）；`MinSpeechMs=500`。
 
+## 真机：`-say` 本地 TTS → TX
+
+资产：`sherpa-onnx-offline-tts`、`libonnxruntime.so`、`vits-zh-ll/`（见 `doc/05_sherpa_android_build.md`）。
+
+通话中执行（中文请用脚本文件，避免 adb/PowerShell 编码问题）：
+
+```bash
+# /data/local/tmp/say_test.sh
+export LD_LIBRARY_PATH=/data/local/tmp/nexus_stt
+/data/local/tmp/ai_call -say "你好，对面能听到吗？"
+```
+
+写出 `/data/vendor/ai_hook/tx_inject.pcm`（16k→48k mono）；播完 HAL unlink。
+
+### Echo：STT 出字后自动播回（无 LLM）
+
+**推荐（常驻引擎）：** `nexus_engine` 一次加载 SenseVoice+VITS，`ai_call -backend engine`。
+
+```bash
+# 或 sh /data/local/tmp/start_echo.sh
+export LD_LIBRARY_PATH=/data/local/tmp/nexus_stt ECHO_TTS=1
+nohup /data/local/tmp/ai_call -backend engine -echo-tts >>/data/vendor/ai_hook/ai_call.log 2>&1 &
+```
+
+回退 CLI（每句 exec）：`-backend sherpa`。对方说一句 → 同文 TTS→TX。
+
+### LLM：STT → DeepSeek 流式 → 逐句 TTS→TX
+
+```bash
+# 密钥：一行 sk-... 写入设备（勿提交 git）
+adb shell 'su -c "printf \"%s\" \"sk-YOUR_KEY\" >/data/local/tmp/nexus_stt/deepseek.key; chmod 600 /data/local/tmp/nexus_stt/deepseek.key"'
+
+# 或 sh /data/local/tmp/start_llm.sh
+export LD_LIBRARY_PATH=/data/local/tmp/nexus_stt LLM=1
+nohup /data/local/tmp/ai_call -backend engine -llm >>/data/vendor/ai_hook/ai_call.log 2>&1 &
+```
+
+流式：SSE 收字 → 按 `。！？.!?\n` 切句 → 逐句 TTS；句间等待 HAL 播完（避免覆盖 `tx_inject` 队列）。`-llm` 优先于 `-echo-tts`。
+
 ## Flag / 环境变量
 
 | Flag | Env | 默认 |
 |------|-----|------|
-| `-backend` | `STT_BACKEND` | `mock` |
+| `-backend` | `STT_BACKEND` | `mock`（`sherpa`\|`engine`） |
+| `-engine-bin` | `ENGINE_BIN` | `…/nexus_engine` |
+| `-engine-sock` | `ENGINE_SOCK` | `…/engine.sock` |
 | `-stt-bin` | `STT_BIN` | `/data/local/tmp/nexus_stt/sherpa-onnx-offline` |
 | `-model-dir` | `STT_MODEL_DIR` | `/data/local/tmp/nexus_stt/sense-voice` |
 | `-stt-log` | `STT_LOG` | `/data/vendor/ai_hook/stt.log` |
 | `-sock` | `PCM_SOCK` | `/data/vendor/ai_hook/pcm.sock` |
-| `-lang` | `STT_LANG` | `zh` |
+| `-lang` | `STT_LANG` | `auto`（SenseVoice：auto/zh/en/…） |
+| `-say` | — | 非空则 TTS→TX 后退出 |
+| `-echo-tts` | `ECHO_TTS` | `false`；STT OK 后同文播 TX |
+| `-llm` | `LLM` | `false`；STT→DeepSeek→切句 TTS→TX |
+| `-llm-key` | `DEEPSEEK_API_KEY` | 空则读 key 文件 |
+| `-llm-key-file` | `DEEPSEEK_KEY_FILE` | `…/deepseek.key` |
+| `-llm-model` | `DEEPSEEK_MODEL` | `deepseek-v4-flash` |
+| `-llm-base` | `DEEPSEEK_BASE` | `https://api.deepseek.com` |
+| `-tts-bin` | `TTS_BIN` | `…/sherpa-onnx-offline-tts` |
+| `-tts-model` | `TTS_MODEL_DIR` | `…/vits-zh-ll` |
+| `-tx` | `TX_INJECT` | `…/tx_inject.pcm` |
 
 ## 与 pcm_recv
 

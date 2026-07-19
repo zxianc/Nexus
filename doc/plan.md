@@ -1,6 +1,6 @@
 # 个人 AI 通信助理 (AI-Call-Agent) 技术落地白皮书
 
-**版本:** v1.14（模块 v2.1 重装自动注入通过；下一 1.E）  
+**版本:** v1.17（DeepSeek 流式 LLM 已接；待通话听验）  
 **日期:** 2026-07-19  
 **作者:** Developer  
 **目标环境:** 备用 Android 机（实装：OnePlus 8T / 骁龙 865 / LineageOS 23.2，Magisk + Zygisk）
@@ -52,7 +52,7 @@
    **已完成：** 混合听验 + UDS + **DL-only**。  
    **下一步：** **1.E** TX。
 
-2. **AI 调度守护进程（Go）** — UDS + **本地 STT**（`ai_call` mock|sherpa + VAD 过滤，真机已出字）；TTS/DeepSeek 未接  
+2. **AI 调度守护进程（Go）** — UDS + **常驻 `nexus_engine`（STT+TTS）** / CLI 回退；echo 已通；**DeepSeek 流式**已接（待听验）  
 3. **微信推送层（企业微信 API）** — 未开始  
 
 ---
@@ -70,8 +70,8 @@
 | TX 注入 | incall-music uplink（1.E） | 对面听见 TTS |
 | SELinux | `sepolicy.rule`：execmem + `vendor_data_file` + UDS | Magisk 语法无冒号、不用 `self` |
 | STT | **本地** sherpa-onnx SenseVoice（`ai_call`） | mock 可验管线 |
-| TTS | **本地**（待做） | 经 1.E 注入 |
-| LLM | **DeepSeek 云端**（待做） | 仅思考 |
+| TTS | **本地 VITS**（`vits-zh-ll` ✅） | 经 1.E `tx_inject.pcm`；换模型/`sid` 换声 |
+| LLM | **DeepSeek 云端**（`-llm` 流式切句） | 仅思考 |
 | 企微 | 待后续 | |
 
 ### 2.1 已废弃 / 已排除
@@ -86,7 +86,7 @@
 
 ## 3. 实施路线与当前进度
 
-### 阶段一：Native 劫持通话 PCM — **1.C～1.D′、1.F、VAD(A) 完成；模块重装自动注入 ✅；下一 1.E**
+### 阶段一：Native 劫持通话 PCM — **1.A～1.F、VAD(A)、1.E+TTS、DeepSeek 流式 ✅（待听验）**
 
 #### 1.A 注入投递 — ✅
 
@@ -104,15 +104,17 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 
 `INCALL_REC_DOWNLINK` + `VOC_REC_DL`；UDS `kind=DL`；用户确认录音仅对方声。
 
-#### 1.E incall-music TX 注入 — ⏳
+#### 1.E incall-music TX + 本地 TTS — ✅（2026-07-19 通话听验）
 
-对面听见 TTS：`USECASE_INCALL_MUSIC_UPLINK` / `platform_start_incall_music_usecase`。
+- 注入点 + **按需 `tx_inject.pcm`**（48k mono）；播完 unlink，**每句需重新写入**
+- `sherpa-onnx-offline-tts` + **VITS `sherpa-onnx-vits-zh-ll`**；`ai_call -say` → TX
+- 对面听到女声；音色由模型/`-tts-sid` 决定，换模型可换声
+- 软件合成存档：未做；DeepSeek 流式：已接待听验
 
 #### 1.F Go：本地 STT — ✅（2026-07-19 sherpa 真机听验）
 
 - `daemon/ai_call`：DL → VAD → mock|sherpa SenseVoice → `stt.log`
 - 真机出字；VAD 方案 A 已过滤纯标点
-- 软件合成存档 / TTS / DeepSeek：未做
 
 #### 可移植 / 开机自恢复 — ✅（2026-07-19 模块 v2.1 重装）
 
@@ -137,7 +139,7 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 
 ### 阶段二～四
 
-完整 daemon、DeepSeek 流式、企微推送 — 均未开始（内容同前版规划）。
+完整 daemon 多会话、企微推送 — 均未开始（内容同前版规划）。DeepSeek 流式已在 `ai_call -llm`。
 
 
 ---
@@ -169,4 +171,4 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 
 ---
 
-*v1.14：模块 v2.1 重装自动注入通过；下一 1.E TX。*
+*v1.17：DeepSeek 流式（方案 A）合入；待通话听验。*

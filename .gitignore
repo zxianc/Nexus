@@ -34,4 +34,6 @@ Thumbs.db
 *.local
 .env
 *.keystore
+*.key
+deepseek.key
 *.jks

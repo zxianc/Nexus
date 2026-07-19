@@ -59,7 +59,7 @@ func (s Sherpa) Transcribe(ctx context.Context, pcm16kMono []byte) (string, erro
 	}
 	lang := s.Language
 	if lang == "" {
-		lang = "zh"
+		lang = "auto"
 	}
 	args := []string{
 		fmt.Sprintf("--tokens=%s", tokens),

@@ -368,6 +368,88 @@
 - **不**做进 `ai_audio_hook`；短信独立模块/组件，Go 统一配置（含按卡策略），与 HAL/STT 解耦。
 - **记在：** `03_pcm_hook_next.md` / `plan.md`。
 
+## 2026-07-19 — 1.E 起步：incall-music TX 测试音（待对面听验）
+
+- **侦察：** `audio_platform_info.xml`：`USECASE_INCALL_MUSIC_UPLINK` out **id=23**（`pcmC0D23p`）；mixer `Incall_Music Audio Mixer MultiMedia9`；与 DL 录音同号不同向（c/p）。
+- **实现：** `tx_incall_music_thread`：`platform_start_incall_music_usecase` → mixer=1 → `pcm_open(0,23,PCM_OUT)` → 持续写 **880Hz** 正弦；挂断清理。
+- **部署：** 已热更 `libai_hook.so` 并 reinject；日志见 `HAL 1.D'+1.E hooks done`。
+- **待你：** 打一通，问对面是否听到连续蜂鸣；本机查 `1.E pcm READY` / `1.E pcm_write`。
+
+## 2026-07-19 — 1.E 切片 A 听验通过：对面可闻 TX
+
+- **用户确认：** 对面能听到一直「嘟」的测试音（880Hz）。
+- **结论：** incall-music uplink（d23p + MultiMedia9）路径打通；**1.E 注入点成立**。
+- **下一步：** 停掉常开测试音（改为按需/文件/UDS 灌 PCM）；接 TTS 或 Go→HAL 送语音。
+
+## 2026-07-19 — 1.E：默认静音 + 文件按需注入
+
+- **改动：** TX 线程默认写 **silence** 保活；不再常开蜂鸣。
+- **按需：**
+  - 把 raw PCM 推到 `/data/vendor/ai_hook/tx_inject.pcm`（须匹配 incall-music 格式，现多为 48k stereo s16le）→ 播完 unlink。
+  - 调试蜂鸣：`touch /data/vendor/ai_hook/tx_tone`（存在即出 880Hz；删掉恢复静音）。
+- **已部署** 新 so；样例 `tx_beep_48k_stereo.pcm` 在 `/data/vendor/ai_hook/`（复制为 `tx_inject.pcm` 可测）。
+- **待验：** 通话中 `cp tx_beep_*.pcm tx_inject.pcm`，对面应听约 2s「嘟」后恢复安静。
+
+## 2026-07-19 — 1.E 按需注入听验通过
+
+- **格式：** incall-music 为 **48kHz mono**（`ch1`）；用 `tx_beep_48k_mono.pcm`。
+- **真机：** 通话中写入 `tx_inject.pcm` → 日志 `loaded` / `drain done`；**用户确认对面听到约 2s 嘟**，随后安静。
+- **结论：** 静音保活 + 文件按需 TX ✅。下一：Go/UDS 送 TTS PCM（或先接本地 TTS 引擎）。
+
+## 2026-07-19 — 本地 TTS：sherpa VITS + ai_call -say
+
+- **构建：** `build_sherpa_tts_api28.ps1` 产出 `sherpa-onnx-offline-tts`（piper-phonemize zip 需放 build 目录本地缓存，避免 FetchContent 断网）。
+- **模型：** `sherpa-onnx-vits-zh-ll` → `/data/local/tmp/nexus_stt/vits-zh-ll/`。
+- **Go：** `ai_call -say "…"` → VITS → 16k→48k mono → `tx_inject.pcm`；真机冒烟 OK（186KB PCM）。
+- **待你：** 通话中再跑 `-say`，听对面中文。
+
+## 2026-07-19 — TTS 通话听验：首次通过；二次无声=未再写入
+
+- **用户确认：** 第一通对面听到女声「你好能听到嘛」。
+- **日志：** 13:03:29 `loaded tx_inject.pcm bytes=186174` → `drain done`；`audible_periods=388`。
+- **第二通无声：** 13:03:44 TX 起但无 `loaded`，`audible_periods=0`——文件已在首通播完 unlink，未再跑 `-say`。
+- **结论：** TTS→TX 端到端 ✅；**每次播放都要重新 `-say`**（或再写 `tx_inject.pcm`）。
+- **音色：** 由 VITS 模型 / `-tts-sid` 决定；换模型即可换声（已记入 plan / 03）。
+- **下一：** STT→LLM→TTS 闭环（DeepSeek）；可选先做 STT echo TTS。
+
+## 2026-07-19 — STT echo TTS（无 LLM）
+
+- **改动：** `ai_call -echo-tts` / `ECHO_TTS=1`：STT 真句后串行 `speakTX` 同文注入。
+- **待验：** 通话中开 sherpa+echo，对面应听到复述。
+
+## 2026-07-19 — 常驻引擎方案 B（nexus_engine）
+
+- **实现：** `daemon/nexus_engine`（STT+TTS 同进程常驻）+ `ai_call -backend engine`（UDS 行 JSON）。
+- **构建：** `build_api28.ps1`；TLS 需 `-Wl,-z,max-page-size=16384`。
+- **设备：** 冷加载 STT 1.6s + TTS 0.96s；RSS≈510MB；常驻后 TTS `ms≈0.9–1.1`（优于每句 exec CLI）。
+- **现行：** echo 已用 `engine`；CLI `sherpa` 仍可回退。
+
+## 2026-07-19 — Echo 听验：静音会挡 TX；常驻引擎已加速
+
+- **现象：** 安卓通话「静音」时对面听不见复述/嘟；取消静音后可听（含蜂鸣前缀）。
+- **原因：** 静音关的是**上行**（对面听你），听筒下行仍有声；incall-music 与麦同属上行，一并被挡。HAL 仍 `pcm_write`，mute 在更下游。
+- **延迟：** 常驻 `nexus_engine` 后 STT `rt≈0.07–0.1s`（原 CLI≈1.9s）；体感明显快。
+- **生命周期：** `nexus_engine` **跨通话常驻**（模型只加载一次）；非每通电话新起 STT/TTS 进程。`ai_call` 复用 `engine.sock`。
+
+## 2026-07-19 — STT 语言改为 auto（改善英文识别）
+
+- **原因：** 默认 `sense-voice-language=zh`，英文识别差。
+- **改动：** 默认 / 启动脚本改为 `auto`；已重启 `nexus_engine`。
+- **注意：** TTS 仍是中文 VITS `zh-ll`，英文词常被当 OOV 跳过——听英文复述要换英文/多语 TTS。
+
+## 2026-07-19 — DeepSeek 流式 LLM（方案 A）
+
+- **实现：** `llm` 包（SSE `/chat/completions`）+ 标点切句 + 逐句 TTS→TX；句间 `waitTXPlayed`（HAL 加载会清空队列）。
+- **开关：** `-llm` / `LLM=1`；Key：`DEEPSEEK_API_KEY` 或 `/data/local/tmp/nexus_stt/deepseek.key`。
+- **脚本：** `tmp/start_llm.sh`。
+- **待验：** 通话勿静音；对面应听到 AI 回复（首句可有嘟）。
+
+## 2026-07-19 — DeepSeek 闭环听验通过
+
+- **现象：** STT→LLM→TTS 对面可听；例：「你的外卖到了。」→「好的，放在门口吧。」`llm ok rt≈3–4s`。
+- **排障：** Android 上 Go 需自定义 DNS + 加载 `/system/etc/security/cacerts`（否则 lookup/[::1]:53、x509 unknown authority）。
+- **嘟声：** 诊断蜂鸣默认关闭（`TX_BEEP_PREFIX=1` 可开）。
+
 <!-- 新条目模板（复制到文末填写）：
 
 ## YYYY-MM-DD — 标题

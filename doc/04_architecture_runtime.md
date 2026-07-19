@@ -1,7 +1,7 @@
 # Nexus 现行实现：技术方案 / 数据流 / 线程模型
 
 **日期：** 2026-07-19  
-**对应进度：** 阶段 1.A～1.D′、1.F、VAD(A) 完成；**模块 v2.1 重装自动注入已验**；**1.E TX / TTS / LLM / 企微未做**  
+**对应进度：** 1.A～1.F、VAD(A)、**1.E TX + 本地 TTS 通话听验 ✅**；**闭环 LLM / mix 存档 / 企微未做**  
 **目标机：** OnePlus 8T / 骁龙 865 / LineageOS + Magisk Zygisk  
 **模块版本：** `ai_audio_hook` **v2.1**（versionCode=3）  
 
@@ -13,7 +13,9 @@
 
 在 **32-bit `android.hardware.audio.service`** 里用 Dobby 钩住高通 voice usecase，通话时打开 **incall-rec DL-only**（`pcm_open(0,23)`），把对方下行 PCM **落盘 + Unix Domain Socket 推给 Go**；Go 进程 `ai_call` 做重采样、能量 VAD、本地 SenseVoice STT，写出转写日志。
 
-**不做：** 在 `audioserver` 抓通话 PCM（通话段 AF standby）；硬件双路 incall-rec；当前也不做 TX/TTS/LLM。
+**不做：** 在 `audioserver` 抓通话 PCM（通话段 AF standby）；硬件双路 incall-rec。  
+**已做 TX：** `ai_call -say` / echo → VITS → `tx_inject.pcm` → incall-music。  
+**常驻引擎：** `nexus_engine`（SenseVoice+VITS 同进程）← UDS ← `ai_call -backend engine`；**未做** DeepSeek、mix 存档。
 
 **职责定稿（2026-07-19）：**
 
@@ -240,7 +242,7 @@ pcm.sock
 |----|------|--------------|
 | 对方声 → STT | ✅ DL → ai_call → stt.log | 同左 |
 | 文字 → 思考 | ❌ | DeepSeek |
-| 回复声 → 对方 | ❌ | TTS → 1.E uplink |
+| 回复声 → 对方 | ✅ 手动 `-say` | STT→LLM→TTS 自动 |
 | 存档「对方+AI」 | ❌（现只有 DL 落盘） | Go `mix(DL, TTS PCM)` |
 
 ---
@@ -386,8 +388,9 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 
 | 项 | 状态 |
 |----|------|
-| 1.E incall-music **TX**（对面听 TTS） | 未做 |
-| 本地 TTS / DeepSeek LLM | 未做 |
+| 1.E incall-music **TX** + 本地 VITS TTS | ✅（手动 `-say`；每句重写 inject） |
+| 常驻 `nexus_engine` + echo | ✅（`-backend engine`） |
+| DeepSeek LLM / STT→LLM→TTS 自动闭环 | 未做 |
 | Go 内 `mix(DL, TTS)` 存档 | 未做 |
 | 企微推送 | 未做 |
 | `ai_call` Magisk 开机自启 | 未做 |

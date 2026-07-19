@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <atomic>
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -15,6 +16,8 @@
 #include "dobby.h"
 
 #define PCM_SOCK_PATH "/data/vendor/ai_hook/pcm.sock"
+#define TX_INJECT_PATH "/data/vendor/ai_hook/tx_inject.pcm"
+#define TX_TONE_PATH "/data/vendor/ai_hook/tx_tone"
 #define APCM_MAGIC 0x4D435041u /* 'APCM' LE */
 /* APCM hdr[12:14] stream kind (u16 LE) */
 enum {
@@ -35,6 +38,7 @@ using voice_fn2_t = int (*)(void *adev, int usecase);
 using platform_voice_fn_t = int (*)(void *platform, unsigned int vsid);
 using set_incall_sess_fn_t = int (*)(void *platform, unsigned int session_id, int rec_mode);
 using stop_incall_fn_t = int (*)(void *platform);
+using incall_music_fn_t = int (*)(void *platform);
 using voice_sid_fn_t = unsigned int (*)(void *adev);
 using stream_fn_t = int (*)(void *stream);
 
@@ -138,6 +142,8 @@ static int fake_plat_start_voice(void *platform, unsigned int vsid) {
 
 static set_incall_sess_fn_t fn_set_incall_sess = nullptr;
 static stop_incall_fn_t fn_stop_incall = nullptr;
+static incall_music_fn_t fn_start_incall_music = nullptr;
+static incall_music_fn_t fn_stop_incall_music = nullptr;
 static voice_sid_fn_t fn_voice_sid = nullptr;
 static set_incall_sess_fn_t orig_set_incall_sess = nullptr;
 static int fake_set_incall_sess(void *platform, unsigned int session_id, int rec_mode) {
@@ -174,6 +180,123 @@ static bool load_capture_config(struct pcm_config *out) {
     out->format = PCM_FORMAT_S16_LE;
     LOGI("pcm_config fallback 48k mono");
     return false;
+}
+
+static bool load_incall_music_config(struct pcm_config *out) {
+    auto *cfg = (struct pcm_config *)resolve_sym("audio.primary.kona.so", "pcm_config_incall_music");
+    if (cfg) {
+        memcpy(out, cfg, sizeof(*out));
+        LOGI("pcm_config_incall_music ch=%u rate=%u period=%u count=%u fmt=%u", out->channels,
+             out->rate, out->period_size, out->period_count, out->format);
+        return true;
+    }
+    memset(out, 0, sizeof(*out));
+    out->channels = 1;
+    out->rate = 48000;
+    out->period_size = 480;
+    out->period_count = 4;
+    out->format = PCM_FORMAT_S16_LE;
+    LOGI("pcm_config_incall_music fallback 48k mono");
+    return false;
+}
+
+// Debug: ~880Hz tone when /data/vendor/ai_hook/tx_tone exists.
+static void fill_tone_s16(int16_t *dst, int frames, int channels, unsigned rate, double *phase) {
+    const double freq = 880.0;
+    const double two_pi = 6.283185307179586;
+    const double step = two_pi * freq / (double)rate;
+    const int16_t amp = 6000;
+    for (int i = 0; i < frames; ++i) {
+        int16_t s = (int16_t)(std::sin(*phase) * (double)amp);
+        *phase += step;
+        if (*phase > two_pi) {
+            *phase -= two_pi;
+        }
+        for (int c = 0; c < channels; ++c) {
+            dst[i * channels + c] = s;
+        }
+    }
+}
+
+// On-demand TX: drop raw s16le PCM (match incall-music rate/ch) onto TX_INJECT_PATH.
+struct TxInjectQ {
+    pthread_mutex_t mu;
+    unsigned char *data;
+    size_t len;
+    size_t off;
+};
+
+static void txq_init(TxInjectQ *q) {
+    pthread_mutex_init(&q->mu, nullptr);
+    q->data = nullptr;
+    q->len = 0;
+    q->off = 0;
+}
+
+static void txq_clear_locked(TxInjectQ *q) {
+    free(q->data);
+    q->data = nullptr;
+    q->len = 0;
+    q->off = 0;
+}
+
+static void txq_destroy(TxInjectQ *q) {
+    pthread_mutex_lock(&q->mu);
+    txq_clear_locked(q);
+    pthread_mutex_unlock(&q->mu);
+    pthread_mutex_destroy(&q->mu);
+}
+
+static void txq_try_load_file(TxInjectQ *q) {
+    struct stat st {};
+    if (stat(TX_INJECT_PATH, &st) != 0 || st.st_size <= 0) {
+        return;
+    }
+    int fd = open(TX_INJECT_PATH, O_RDONLY);
+    if (fd < 0) {
+        return;
+    }
+    auto *buf = (unsigned char *)malloc((size_t)st.st_size);
+    if (!buf) {
+        close(fd);
+        return;
+    }
+    ssize_t n = read(fd, buf, (size_t)st.st_size);
+    close(fd);
+    // consume file so we don't loop the same clip
+    unlink(TX_INJECT_PATH);
+    if (n <= 0) {
+        free(buf);
+        return;
+    }
+    pthread_mutex_lock(&q->mu);
+    txq_clear_locked(q);
+    q->data = buf;
+    q->len = (size_t)n;
+    q->off = 0;
+    pthread_mutex_unlock(&q->mu);
+    LOGI("1.E loaded tx_inject.pcm bytes=%zd", n);
+}
+
+static bool txq_pull(TxInjectQ *q, void *dst, size_t need) {
+    pthread_mutex_lock(&q->mu);
+    size_t avail = (q->off < q->len) ? (q->len - q->off) : 0;
+    if (avail == 0) {
+        pthread_mutex_unlock(&q->mu);
+        return false;
+    }
+    size_t n = avail < need ? avail : need;
+    memcpy(dst, q->data + q->off, n);
+    q->off += n;
+    if (n < need) {
+        memset((unsigned char *)dst + n, 0, need - n);
+    }
+    if (q->off >= q->len) {
+        txq_clear_locked(q);
+        LOGI("1.E tx_inject drain done");
+    }
+    pthread_mutex_unlock(&q->mu);
+    return true;
 }
 
 static int open_dump_fd() {
@@ -466,6 +589,156 @@ static void start_round7() {
     pthread_detach(t);
 }
 
+// 1.E: incall-music uplink TX — pcmC0D23p + Incall_Music Audio Mixer MultiMedia9.
+static void *tx_incall_music_thread(void *) {
+    usleep(600 * 1000); // after voice path settles; slightly after DL thread
+    if (!g_in_voice.load()) {
+        return nullptr;
+    }
+
+    void *platform = g_platform.load();
+    if (!platform) {
+        LOGE("1.E: no platform ptr");
+        return nullptr;
+    }
+
+    LOGI("1.E start incall-music uplink (test tone)");
+    if (fn_start_incall_music) {
+        int rc = fn_start_incall_music(platform);
+        LOGI("platform_start_incall_music_usecase rc=%d", rc);
+    } else {
+        LOGE("1.E: platform_start_incall_music_usecase missing");
+    }
+
+    auto mixer_open = (mixer_open_fn_t)resolve_sym("libtinyalsa.so", "mixer_open");
+    auto mixer_close = (mixer_close_fn_t)resolve_sym("libtinyalsa.so", "mixer_close");
+    auto get_ctl = (mixer_get_ctl_fn_t)resolve_sym("libtinyalsa.so", "mixer_get_ctl_by_name");
+    auto set_val = (mixer_ctl_set_fn_t)resolve_sym("libtinyalsa.so", "mixer_ctl_set_value");
+    auto pcm_open = (pcm_open_fn_t)resolve_sym("libtinyalsa.so", "pcm_open");
+    auto pcm_write = (pcm_io_fn_t)resolve_sym("libtinyalsa.so", "pcm_write");
+    auto pcm_close = (pcm_close_fn_t)resolve_sym("libtinyalsa.so", "pcm_close");
+    auto pcm_ready = (pcm_is_ready_fn_t)resolve_sym("libtinyalsa.so", "pcm_is_ready");
+    auto pcm_err = (pcm_get_error_fn_t)resolve_sym("libtinyalsa.so", "pcm_get_error");
+    auto pcm_start = (pcm_start_fn_t)resolve_sym("libtinyalsa.so", "pcm_start");
+
+    if (!mixer_open || !get_ctl || !set_val || !pcm_open || !pcm_write || !pcm_close || !pcm_ready) {
+        LOGE("1.E: missing tinyalsa syms");
+        return nullptr;
+    }
+
+    void *mixer = mixer_open(0);
+    if (!mixer) {
+        LOGE("1.E: mixer_open failed");
+        return nullptr;
+    }
+    set_mixer_int(mixer, get_ctl, set_val, "Incall_Music Audio Mixer MultiMedia9", 1);
+
+    struct pcm_config cfg {};
+    load_incall_music_config(&cfg);
+    if (cfg.channels == 0) {
+        cfg.channels = 1;
+    }
+    if (cfg.rate == 0) {
+        cfg.rate = 48000;
+    }
+    if (cfg.period_size == 0) {
+        cfg.period_size = 480;
+    }
+    if (cfg.period_count == 0) {
+        cfg.period_count = 4;
+    }
+    cfg.format = PCM_FORMAT_S16_LE;
+
+    // platform XML: USECASE_INCALL_MUSIC_UPLINK out id=23 → pcmC0D23p
+    void *pcm = pcm_open(0, 23, PCM_OUT, &cfg);
+    if (!pcm || !pcm_ready(pcm)) {
+        LOGI("1.E pcm OUT d23 not ready: %s", (pcm && pcm_err) ? pcm_err(pcm) : "null");
+        if (pcm) {
+            pcm_close(pcm);
+        }
+        set_mixer_int(mixer, get_ctl, set_val, "Incall_Music Audio Mixer MultiMedia9", 0);
+        mixer_close(mixer);
+        if (fn_stop_incall_music) {
+            fn_stop_incall_music(platform);
+        }
+        return nullptr;
+    }
+    LOGI("1.E pcm READY OUT d23 %uHz ch%u (incall-music)", cfg.rate, cfg.channels);
+    if (pcm_start) {
+        LOGI("1.E pcm_start rc=%d", pcm_start(pcm));
+    }
+
+    unsigned frame_bytes = cfg.period_size * cfg.channels * 2;
+    auto *buf = (int16_t *)malloc(frame_bytes);
+    if (!buf) {
+        pcm_close(pcm);
+        set_mixer_int(mixer, get_ctl, set_val, "Incall_Music Audio Mixer MultiMedia9", 0);
+        mixer_close(mixer);
+        if (fn_stop_incall_music) {
+            fn_stop_incall_music(platform);
+        }
+        return nullptr;
+    }
+
+    TxInjectQ inj {};
+    txq_init(&inj);
+    double phase = 0;
+    int hits = 0;
+    size_t total = 0;
+    size_t audible = 0; // non-silence periods
+    LOGI("1.E TX mode: silence keepalive; inject=%s tone_flag=%s", TX_INJECT_PATH, TX_TONE_PATH);
+
+    while (g_in_voice.load()) {
+        if ((hits % 25) == 0) {
+            txq_try_load_file(&inj);
+        }
+        bool tone = (access(TX_TONE_PATH, F_OK) == 0);
+        bool got = false;
+        if (tone) {
+            fill_tone_s16(buf, (int)cfg.period_size, (int)cfg.channels, cfg.rate, &phase);
+            got = true;
+        } else {
+            got = txq_pull(&inj, buf, frame_bytes);
+            if (!got) {
+                memset(buf, 0, frame_bytes);
+            }
+        }
+        int rc = pcm_write(pcm, buf, frame_bytes);
+        if (rc < 0) {
+            LOGI("1.E pcm_write fail i=%d rc=%d err=%s", hits, rc, pcm_err ? pcm_err(pcm) : "?");
+            break;
+        }
+        hits++;
+        total += frame_bytes;
+        if (got) {
+            audible++;
+        }
+        if (hits <= 8 || (hits % 200) == 0) {
+            LOGI("1.E pcm_write #%d bytes=%u total=%zu audible_periods=%zu tone=%d", hits, frame_bytes,
+                 total, audible, (int)tone);
+        }
+    }
+
+    LOGI("1.E TX DONE hits=%d written=%zu audible_periods=%zu", hits, total, audible);
+    txq_destroy(&inj);
+    free(buf);
+    pcm_close(pcm);
+    set_mixer_int(mixer, get_ctl, set_val, "Incall_Music Audio Mixer MultiMedia9", 0);
+    mixer_close(mixer);
+    if (fn_stop_incall_music && platform) {
+        int rc = fn_stop_incall_music(platform);
+        LOGI("platform_stop_incall_music_usecase rc=%d", rc);
+    }
+    LOGI("1.E incall-music thread exit");
+    return nullptr;
+}
+
+static void start_tx_incall_music() {
+    pthread_t t;
+    pthread_create(&t, nullptr, tx_incall_music_thread, nullptr);
+    pthread_detach(t);
+}
+
 static void cleanup_incall_mixer() {
     auto mixer_open = (mixer_open_fn_t)resolve_sym("libtinyalsa.so", "mixer_open");
     auto mixer_close = (mixer_close_fn_t)resolve_sym("libtinyalsa.so", "mixer_close");
@@ -480,11 +753,16 @@ static void cleanup_incall_mixer() {
     }
     set_mixer_int(mixer, get_ctl, set_val, "MultiMedia9 Mixer VOC_REC_UL", 0);
     set_mixer_int(mixer, get_ctl, set_val, "MultiMedia9 Mixer VOC_REC_DL", 0);
+    set_mixer_int(mixer, get_ctl, set_val, "Incall_Music Audio Mixer MultiMedia9", 0);
     mixer_close(mixer);
     void *platform = g_platform.load();
     if (fn_stop_incall && platform) {
         int rc = fn_stop_incall(platform);
         LOGI("platform_stop_incall_recording_usecase rc=%d", rc);
+    }
+    if (fn_stop_incall_music && platform) {
+        int rc = fn_stop_incall_music(platform);
+        LOGI("platform_stop_incall_music_usecase (cleanup) rc=%d", rc);
     }
 }
 
@@ -503,6 +781,7 @@ static int fake_voice_start_usecase(void *adev, int usecase) {
     int rc = orig_voice_start_uc(adev, usecase);
     g_in_voice.store(true);
     start_round7();
+    start_tx_incall_music();
     return rc;
 }
 static int fake_voice_stop_usecase(void *adev, int usecase) {
@@ -546,10 +825,12 @@ static void install_hooks() {
         fn_set_incall_sess = orig_set_incall_sess;
     }
     fn_stop_incall = (stop_incall_fn_t)resolve_sym(prim, "platform_stop_incall_recording_usecase");
+    fn_start_incall_music = (incall_music_fn_t)resolve_sym(prim, "platform_start_incall_music_usecase");
+    fn_stop_incall_music = (incall_music_fn_t)resolve_sym(prim, "platform_stop_incall_music_usecase");
     fn_voice_sid = (voice_sid_fn_t)resolve_sym(prim, "voice_get_active_session_id");
 
     start_uds_server();
-    LOGI("HAL 1.D' hooks done (DL-only dump + UDS server %s)", PCM_SOCK_PATH);
+    LOGI("HAL 1.D'+1.E hooks done (DL UDS + TX silence/inject) sock=%s", PCM_SOCK_PATH);
 }
 
 static void *main_thread(void *) {

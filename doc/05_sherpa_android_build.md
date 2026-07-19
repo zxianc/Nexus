@@ -177,13 +177,43 @@ adb shell "su -c 'LD_LIBRARY_PATH=/data/local/tmp/nexus_stt /data/local/tmp/nexu
 
 ---
 
-## 8. 索引
+## 8. 常驻引擎 `nexus_engine`（方案 B）
+
+源码：[`daemon/nexus_engine/main.cc`](../daemon/nexus_engine/main.cc)  
+构建：`daemon/nexus_engine/build_api28.ps1`（链已有 sherpa 静态库；需 `-Wl,-z,max-page-size=16384` 避免 Bionic TLS 对齐错误）
+
+- 启动加载 SenseVoice + VITS 各一次；UDS `/data/local/tmp/nexus_stt/engine.sock` 行 JSON（`ping`/`stt`/`tts`）
+- `ai_call -backend engine` 由 Go `engine.Supervisor` 拉起或复用
+- 冷启动约 2–3s；常驻后单次 TTS 约 1s（日志 `tts id=… ms=`）
+
+## 9. TTS CLI（`sherpa-onnx-offline-tts`）
+
+在已有 STT 的 `build-android-arm64-v8a` 上开 TTS：
+
+```powershell
+# daemon/ai_call/scripts/build_sherpa_tts_api28.ps1
+# 需 SHERRPA_ONNX_ENABLE_TTS=ON；复用同目录 ORT 1.27.0
+```
+
+**踩坑：** FetchContent 拉 `piper-phonemize-….zip` 易断。把 zip 放到  
+`build-android-arm64-v8a/piper-phonemize-f3ff95afc03640bc1399e113e83361192a2fafb4.zip`  
+（SHA256=`d9cca4e2…`）后重跑脚本即可本地命中。
+
+模型：`sherpa-onnx-vits-zh-ll` → 设备 `/data/local/tmp/nexus_stt/vits-zh-ll/`。  
+调用：`ai_call -say "…"`（见 `daemon/ai_call/README.md`）。
+
+---
+
+## 10. 索引
 
 | 文件 | 说明 |
 |------|------|
 | `daemon/ai_call/scripts/build_sherpa_android.ps1` | 首次 clone + ORT + CMake（API 21 脚手架） |
-| `daemon/ai_call/scripts/rebuild_sherpa_api28.ps1` | **现行** API 28 重编 CLI |
-| `daemon/ai_call/scripts/download_nexus_stt.py` | 模型与对照包下载 |
-| `daemon/ai_call/stt/sherpa.go` | Go 如何调 CLI |
+| `daemon/ai_call/scripts/rebuild_sherpa_api28.ps1` | API 28 重编 STT CLI |
+| `daemon/ai_call/scripts/build_sherpa_tts_api28.ps1` | API 28 编 TTS CLI |
+| `daemon/nexus_engine/build_api28.ps1` | **现行** 常驻引擎 |
+| `daemon/ai_call/engine/` | Go Supervisor / Client |
+| `daemon/ai_call/stt/sherpa.go` / `tts/sherpa.go` | CLI 回退 |
+| `daemon/ai_call/stt/engine.go` / `tts/engine.go` | 常驻引擎后端 |
 
-*过程踩坑与听验见 [`dev_journal.md`](dev_journal.md) 1.F 条目。*
+*过程踩坑与听验见 [`dev_journal.md`](dev_journal.md) 1.F / TTS 条目。*
