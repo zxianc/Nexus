@@ -2,6 +2,19 @@
 
 与 **`nexus_audio_hook`**（HAL）解耦。程序与模型分两个 zip，版本可独立升级。
 
+**框架总览（进程 / 数据流）：** [`doc/00_framework_overview.md`](../doc/00_framework_overview.md)
+
+## 进程速查
+
+| 进程 | 作用 |
+|------|------|
+| `nexus_engine` | 常驻 STT + TTS |
+| `ai_call` | 通话 AI 闭环 + 落盘 |
+| `nexus_callpolicy` | 双卡自动接/拒/人工 |
+| `nexus_notify` | 通话/短信 → 企微 Webhook |
+| `nexus_webui` | 本机配置页 `:8787` |
+| HAL `libai_hook` | 采对方声 + TTS 注入 |
+
 | 模块 | zip | 内容 |
 |------|-----|------|
 | `nexus_runtime` | `nexus_runtime.zip` | `ai_call`、`nexus_engine`、`libonnxruntime.so`、开机自启、`/data/adb/nexus` 配置 |

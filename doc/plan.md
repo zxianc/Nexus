@@ -7,6 +7,7 @@
 
 **相关文档：**
 
+- **现行框架总览（进程 / 数据流）：** [`doc/00_framework_overview.md`](00_framework_overview.md)
 - 过程日志（**增量追加**）：[`doc/dev_journal.md`](dev_journal.md)
 - 下一里程碑清单：[`doc/03_pcm_hook_next.md`](03_pcm_hook_next.md)
 - **现行实现（数据流 / 线程）：** [`doc/04_architecture_runtime.md`](04_architecture_runtime.md)
@@ -72,7 +73,7 @@
 | STT | **本地** sherpa-onnx SenseVoice（`ai_call`） | mock 可验管线 |
 | TTS | **本地 VITS**（`vits-zh-ll` ✅） | 经 1.E；`sid` **0～4**（5 说话人）；换模型可换库 |
 | LLM | **DeepSeek 云端**（`-llm` 流式切句 + 通内 session） | 默认 `deepseek-v4-flash`；打断见 `LLM_BARGE_IN`（默认关） |
-| 企微 / 短信 | **TODO 捆绑后续** | 先落盘；推送与短信一起做 |
+| 企微 / 短信 | ✅ `nexus_notify` 群 Webhook | 挂断 `.notify` + 双卡 inbox；热读配置 |
 
 ### 2.1 已废弃 / 已排除
 
@@ -117,8 +118,13 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 - Android：自定义 DNS + 系统 CA（`/system/etc/security/cacerts`）
 - **通内记忆：** `llm.CallSession` 累积 user/assistant；挂断/新 UDS stream `Reset`
 - **历史上限：** 默认最近 **24** 条非 system（`-llm-max-msgs` / `LLM_MAX_MSGS`）——防 token/延迟膨胀；短通话通常触达不到；**不是**跨通话长期记忆
-- **文本存档：** 挂断 → 等 in-flight 结束 → 全文+DeepSeek 摘要 → `/data/vendor/ai_hook/calls/call_*.txt`
-- **TODO 延期：** 语音 `mix(DL,TTS)`；**企微推送 + 短信**同一里程碑再做
+- **文本存档：** 挂断 → 等 in-flight 结束 → 全文+DeepSeek 摘要 → `/data/vendor/ai_hook/calls/call_*.txt` + `.notify`
+- **TODO 延期：** 语音 `mix(DL,TTS)`；AI 接听静麦保 TX
+
+#### 1.H 企微通知 + 双卡短信 — ✅（2026-07-19）
+
+- `nexus_notify`：消费 `.notify` + 轮询 SMS inbox → 内部群机器人 Webhook
+- `sub_id`→卡槽用 `dumpsys isub`；配置 `notify.*` 热读；见 [`00_framework_overview.md`](00_framework_overview.md)
 
 #### 1.F Go：本地 STT — ✅（2026-07-19 sherpa 真机听验）
 
@@ -137,7 +143,7 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 | 模块 ID | 内容 | 状态 |
 |---------|------|------|
 | **`nexus_audio_hook`** | HAL 注入 / UDS / DL / TX（原 `ai_audio_hook`，仅更名） | ✅ 改名 v2.2 |
-| **`nexus_runtime`** | `ai_call`、`nexus_engine`、`nexus_webui`、`nexus_callpolicy`、ORT so、配置、开机自启 | ✅ `magisk_modules/nexus_runtime`（填 bin 后打包） |
+| **`nexus_runtime`** | `ai_call`、`nexus_engine`、`nexus_webui`、`nexus_callpolicy`、`nexus_notify`、ORT so、配置、开机自启 | ✅ `magisk_modules/nexus_runtime`（填 bin 后打包） |
 | **`nexus_models`** | SenseVoice + VITS 等大模型（与程序版本解耦） | ✅ 骨架 `magisk_modules/nexus_models`（填模型后打包） |
 
 - 可写配置/密钥建议：`/data/adb/nexus/`（`config.json`、`secrets/`），**不**写进 module 只读树  
@@ -149,15 +155,16 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 - HAL：接通即 DL 旁路（UDS+落盘）；不按卡关采集；**暂不考虑省电关旁路**
 - Go/策略：是否 STT/AI、**双卡接听**（`nexus_callpolicy` + WebUI `sims[].policy`）；见设计 `docs/superpowers/specs/2026-07-19-callpolicy-sims-design.md`
 
-#### 定稿 / TODO：短信转发（未做）
+#### 定稿：短信 / 企微出站（`nexus_notify`）
 
-- **不**进 `nexus_audio_hook`；另模块/组件负责短信，**Go 统一配置与转发编排**，与 HAL/STT 解耦
+- **不**进 `nexus_audio_hook`；由 `nexus_notify` 轮询 inbox + 消费通话 `.notify`
+- 与 HAL/STT 解耦；配置在 `config.json` 的 `notify.*`（WebUI 可改）
 
 ---
 
 ### 阶段二～四
 
-完整 daemon 多会话、企微+短信出站、语音 `mix(DL,TTS)` — **TODO 延期**。DeepSeek 闭环 + 文本存档已在 `ai_call -llm`。
+多会话 daemon、语音 `mix(DL,TTS)` — **TODO**。DeepSeek 闭环、文本存档、企微 Webhook + 短信已在 runtime 进程中。
 
 
 ---

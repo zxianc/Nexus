@@ -512,6 +512,11 @@
   - 检测误报：telecom 历史 `Enter RINGING` → 改以 `telephony.registry` `mCallState=1` 为主。
 - **设计：** `docs/superpowers/specs/2026-07-19-callpolicy-sims-design.md`；代码 `daemon/nexus_callpolicy/`。
 
+## 2026-07-19 — 框架总览文档
+
+- 新增 `doc/00_framework_overview.md`：现行进程职责 + 通话/短信/配置数据流。
+- 同步 `doc/README.md`、`04_architecture_runtime.md`、`plan.md`（企微/短信标 ✅）、`magisk_modules/README.md` 进程速查。
+
 ## 2026-07-19 — 企微通知 `nexus_notify`（Webhook + 双卡短信）
 
 - **通道：** 家用动态 IP 无法配企业可信 IP → 改用**内部群**群机器人 Webhook（外部群不能加机器人）。

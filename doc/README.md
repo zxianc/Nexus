@@ -4,6 +4,7 @@
 
 | 文件 | 角色 | 怎么改 |
 |------|------|--------|
+| [`00_framework_overview.md`](00_framework_overview.md) | **现行框架总览（进程 / 数据流）** | 架构变更时改 |
 | [`plan.md`](plan.md) | **总方案 / 路线图** | 只改「当前进度」和选型结论；少写长篇过程 |
 | [`dev_journal.md`](dev_journal.md) | **过程流水账（主记录）** | **只追加**新条目，不删不改已有记录 |
 | [`devlog.md`](devlog.md) | 早期流水（可与 journal 并存） | 增量追加 |
@@ -24,4 +25,4 @@
 
 ## 当前进度一句话
 
-**模块族：** `nexus_audio_hook` + **`nexus_runtime` / `nexus_models`**（[`magisk_modules/README.md`](../magisk_modules/README.md)）。含本机 WebUI 与 **双卡来电策略** `nexus_callpolicy`（`human` / `ai` / `reject`）。
+**模块族：** `nexus_audio_hook` + **`nexus_runtime` / `nexus_models`**（[`magisk_modules/README.md`](../magisk_modules/README.md)）。含本机 WebUI、双卡策略 `nexus_callpolicy`、企微通知 `nexus_notify`。总览见 [`00_framework_overview.md`](00_framework_overview.md)。

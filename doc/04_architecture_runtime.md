@@ -1,10 +1,11 @@
 # Nexus 现行实现：技术方案 / 数据流 / 线程模型
 
 **日期：** 2026-07-19  
-**对应进度：** 1.A～1.F、DeepSeek 闭环 + 通内上下文 + **文本存档落盘 ✅**；**语音 mix / 企微+短信 TODO 延期**
+**对应进度：** 1.A～1.F、DeepSeek 闭环 + 通内上下文 + **文本存档落盘 ✅**；**企微 Webhook + 双卡短信 ✅**（`nexus_notify`）；**语音 mix 仍 TODO**
 **目标机：** OnePlus 8T / 骁龙 865 / LineageOS + Magisk Zygisk  
 **模块版本：** `nexus_audio_hook` **v2.2**（versionCode=4；原 `ai_audio_hook`）
 
+**框架总览（进程速查）：** [`00_framework_overview.md`](00_framework_overview.md)  
 **相关文档：** [`plan.md`](plan.md)（总方案）· [`dev_journal.md`](dev_journal.md)（过程）· [`03_pcm_hook_next.md`](03_pcm_hook_next.md)（下一里程碑）· [`daemon/ai_call/README.md`](../daemon/ai_call/README.md)
 
 ---
@@ -18,12 +19,13 @@
 **常驻引擎：** `nexus_engine`（SenseVoice+VITS 同进程）← UDS ← `ai_call -backend engine`。  
 **LLM：** DeepSeek 云端 SSE（`-llm`）；通内 `CallSession`；挂断写文本档案（摘要+对话）到 `calls/`。  
 **打断：** `LLM_BARGE_IN`（默认关）；开则仅 TTS 播放中可 barge-in，思考中新句排队。详见 [`daemon/ai_call/README.md`](../daemon/ai_call/README.md)。
-**TODO 延期：** 语音 `mix(DL,TTS)`；企微推送与短信转发同一里程碑。
+**通知：** `nexus_notify` 消费 `call_*.txt.notify` + 轮询双卡短信 → 企微群 Webhook。
+**TODO 延期：** 语音 `mix(DL,TTS)` 存档；AI 接听静麦保 TX。
 
 **职责定稿（2026-07-19）：**
 
 - **HAL（`nexus_audio_hook`）：** 只管采集——通话接通就 DL → 落盘 + UDS；**不**按卡/模式动态关采集；**暂不考虑**省电而关旁路。
-- **业务层（Go / 以后策略服务）：** 决定用不用（STT/AI / 丢弃）；双卡自动接听/拒接/放行人工也在业务层，不进 HAL。
+- **业务层（Go）：** `ai_call` 决定用不用音频；`nexus_callpolicy` 双卡接/拒/人工；`nexus_notify` 出站；均不进 HAL。
 
 ---
 
@@ -39,8 +41,11 @@
 | **HAL 进程** | 系统自带的 `android.hardware.audio.service` | 真正碰到高通通话音频管线的地方 | 通话 PCM 不在 audioserver，别处抓不到 |
 | **libai_hook.so** | 我们注入的 C++ 载荷 | 通话时打开 incall-rec DL，旁路出 PCM | 没有「对方声音」原始流 |
 | **pcm.sock (UDS)** | HAL↔Go 的管道 | 实时把 PCM 送给用户态守护进程 | Go 读不到流（仍可只靠落盘文件，但不实时） |
-| **ai_call** | Go 守护进程 | 切句 + 本地识别 + 写转写 | 只有 PCM，没有文字 |
-| **sherpa + 模型** | 离线 ASR 引擎 | 把一句 16k PCM 变成中文文本 | 只能 mock，不能出真字 |
+| **ai_call** | Go 守护进程 | 切句 + STT/LLM/TTS + 挂断落盘 | 只有 PCM，没有文字/代答 |
+| **nexus_engine** | 常驻 SenseVoice+VITS | 同进程 STT/TTS，经 `engine.sock` | 每句起子进程太慢 |
+| **nexus_callpolicy** | 双卡来电策略 | RINGING 时接/拒/放行 | 只能人工接听 |
+| **nexus_notify** | 企微出站 | 通话存档 + 短信 → Webhook | 只有本地 `calls/` |
+| **nexus_webui** | 本机配置页 | 改 `config.json`、看进程/日志 | 只能 adb 改配置 |
 | **pcm_recv** | 早期调试工具 | 只验证 UDS 字节是否完整 | 正式链路用 `ai_call`，二者不要同时连 |
 
 ### 2.2 Magisk 模块各脚本
@@ -67,7 +72,7 @@
 
 - **DL（Downlink）** = 对方 → 本机（现行 STT 只采这个）
 - **UL（Uplink）** = 本机话筒 → 对方（现行故意关掉 VOC_REC_UL）
-- 数据从 **内核/驱动 PCM 设备** 流出 → 我们的读环 → **文件 / Socket**；**不**改写通话本身听到的声音（TX 注入是以后 1.E）
+- 数据从 **内核/驱动 PCM 设备** 流出 → 我们的读环 → **文件 / Socket**；旁路**不**改对方原声；**TX** 另经 `tx_inject.pcm` → incall-music。
 
 ### 2.4 Go `ai_call` 内部模块
 
@@ -168,13 +173,15 @@
 | `pcm_read` → `ai_dl.pcm` | 同 PCM 写文件 | 人工听验、对齐字节数 |
 | `pcm_read` → `pcm.sock` → `ai_call` | 同 PCM 过 UDS | 实时 STT 输入 |
 | `ai_call` → 16k mono 句 | 切好的短 PCM | STT 引擎输入 |
-| STT → `stt.log` | 中文句子 | 同时作为 LLM user 输入 |
+| STT → LLM → TTS → `tx_inject.pcm` | 回复语音 | 对方听到 |
+| 挂断 → `calls/call_*.txt` + `.notify` | 文字存档 | `nexus_notify` → 企微 |
 
 **当前没有的回流（故图上没有）：**
 
-- TTS PCM → 通话上行（1.E）
-- 企微出站 + 短信转发（捆绑后续）
 - 语音 `mix(DL, TTS)` 存档（延期）
+- AI 接听时静麦保 TX（延期）
+
+进程级总览见 [`00_framework_overview.md`](00_framework_overview.md)。
 
 ### 3.2 按阶段：通话建立时 HAL 里发生什么
 
@@ -249,7 +256,7 @@ pcm.sock
 | 回复声 → 对方 | ✅ STT→LLM→TTS→TX | `-llm`；勿静音 |
 | 存档「对方+AI」文本 | ✅ 挂断落盘 | `/data/vendor/ai_hook/calls/` |
 | 存档「对方+AI」语音 | ❌ TODO 延期 | Go `mix(DL, TTS)` 按播放时间轴 |
-| 企微 / 短信 | ❌ TODO 捆绑后续 | 先落盘 |
+| 企微 / 短信 | ✅ `nexus_notify` Webhook | 内部群机器人；双卡 SMS inbox |
 
 ---
 
@@ -400,13 +407,13 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 | 通话文本存档 + 摘要落盘 | ✅ `calls/call_*.txt` |
 | 语音打断（barge-in） | ✅ 开关 `LLM_BARGE_IN`（默认关）；仅 TTS 中打断 |
 | `mix(DL, TTS)` 语音存档 | TODO 延期（时间轴对齐） |
-| 企微推送 + 短信转发 | TODO 捆绑后续 |
+| 企微推送 + 短信转发 | ✅ `nexus_notify`（群 Webhook） |
 | Magisk 开机自启 `ai_call` + `nexus_engine` | ✅ `nexus_runtime` `service.sh` |
 | 本机配置 WebUI | ✅ `nexus_webui` → `http://127.0.0.1:8787` |
 | 双卡来电策略 | ✅ `nexus_callpolicy`（`human` / `ai` / `reject`） |
 | AI 接听时静麦保 TX | TODO 后续（HAL/mixer；勿用系统静音） |
 
-目标音频方案（全 AI）：`DL → STT → LLM → TTS → 1.E 注入`；**现行文本存档**；语音 mix / 企微+短信见 TODO。见 [`plan.md`](plan.md)。
+目标音频方案（全 AI）：`DL → STT → LLM → TTS → 1.E 注入`；文本存档 + 企微通知已通；语音 mix 见 TODO。总览 [`00_framework_overview.md`](00_framework_overview.md)；细节见 [`plan.md`](plan.md)。
 
 ---
 
