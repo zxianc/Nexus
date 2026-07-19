@@ -5,7 +5,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"nexus.nexuscfg"
@@ -17,11 +19,17 @@ type CallWatcher struct {
 	Interval   time.Duration
 	Load       func() (nexuscfg.Config, error)
 	Client     *WeComClient
+
+	mu       sync.Mutex
+	backoff  map[string]time.Time // marker path → next attempt
 }
 
 func (w *CallWatcher) Run(ctx context.Context) {
 	if w.Interval <= 0 {
 		w.Interval = 2 * time.Second
+	}
+	if w.backoff == nil {
+		w.backoff = map[string]time.Time{}
 	}
 	t := time.NewTicker(w.Interval)
 	defer t.Stop()
@@ -38,6 +46,7 @@ func (w *CallWatcher) Run(ctx context.Context) {
 func (w *CallWatcher) scanOnce(ctx context.Context) {
 	cfg, err := w.Load()
 	if err != nil {
+		log.Printf("call watch: config: %v", err)
 		return
 	}
 	if !cfg.Notify.Enabled || !cfg.Notify.Call.Enabled {
@@ -52,8 +61,10 @@ func (w *CallWatcher) scanOnce(ctx context.Context) {
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
+		log.Printf("call watch: readdir %s: %v", dir, err)
 		return
 	}
+	var markers []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -62,18 +73,35 @@ func (w *CallWatcher) scanOnce(ctx context.Context) {
 		if !strings.HasSuffix(name, ".txt.notify") {
 			continue
 		}
-		marker := filepath.Join(dir, name)
+		markers = append(markers, filepath.Join(dir, name))
+	}
+	sort.Strings(markers)
+	now := time.Now()
+	for _, marker := range markers {
+		w.mu.Lock()
+		until, delayed := w.backoff[marker]
+		w.mu.Unlock()
+		if delayed && now.Before(until) {
+			continue
+		}
 		archive := strings.TrimSuffix(marker, ".notify")
 		if err := w.process(ctx, cfg, archive, marker); err != nil {
 			log.Printf("call notify %s: %v", filepath.Base(archive), err)
+			// Back off this marker so one bad/rate-limited file doesn't block others forever.
+			w.mu.Lock()
+			w.backoff[marker] = time.Now().Add(15 * time.Second)
+			w.mu.Unlock()
+			continue
 		}
+		w.mu.Lock()
+		delete(w.backoff, marker)
+		w.mu.Unlock()
 	}
 }
 
 func (w *CallWatcher) process(ctx context.Context, cfg nexuscfg.Config, archive, marker string) error {
 	body, err := os.ReadFile(archive)
 	if err != nil {
-		// Archive missing: drop stale marker
 		_ = os.Remove(marker)
 		return err
 	}
@@ -91,9 +119,9 @@ func (w *CallWatcher) process(ctx context.Context, cfg nexuscfg.Config, archive,
 		Archive:    archive,
 		MaxChars:   cfg.Notify.Call.MaxTranscriptChars,
 	})
-	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if err := w.Client.SendWithRetry(cctx, cfg.Notify.WeCom, cfg.Notify.Channel, msg, 3); err != nil {
+	if err := w.Client.SendWithRetry(cctx, cfg.Notify.WeCom, cfg.Notify.Channel, msg, 2); err != nil {
 		return err
 	}
 	if err := os.Remove(marker); err != nil {

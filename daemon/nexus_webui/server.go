@@ -129,7 +129,8 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	restarted := []string{}
-	if s.RestartScript != "" || s.RunRestart != nil {
+	needRestart := nexuscfg.NeedsCallstackRestart(cur, next)
+	if needRestart && (s.RestartScript != "" || s.RunRestart != nil) {
 		if err := s.writeCallstackEnv(next, engRestart); err != nil {
 			writeJSON(w, 500, map[string]any{"ok": false, "error": "env: " + err.Error()})
 			return

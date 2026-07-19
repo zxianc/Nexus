@@ -60,6 +60,52 @@ func TestEngineDedupeAndPolicy(t *testing.T) {
 	}
 }
 
+func TestEngineAnswerFailureRetries(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.json"
+	cfg := nexuscfg.Default()
+	cfg.Sims = []nexuscfg.Sim{{Slot: 0, Policy: nexuscfg.PolicyAI}}
+	if err := nexuscfg.SaveAtomic(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	w := &stubWatch{list: []Incoming{{Key: "fail1", Slot: 0, Peer: "10086"}}}
+	ad := &failThenOKAdapter{failN: 1}
+	eng := &Engine{ConfigPath: path, Watch: w, Adapter: ad}
+	eng.tick(context.Background())
+	if ad.answers != 1 {
+		t.Fatalf("first answers=%d", ad.answers)
+	}
+	// Still in 2s cooldown
+	eng.tick(context.Background())
+	if ad.answers != 1 {
+		t.Fatalf("cooldown answers=%d", ad.answers)
+	}
+	// Expire failure entry
+	eng.mu.Lock()
+	ent := eng.handled["fail1"]
+	ent.at = time.Now().Add(-3 * time.Second)
+	eng.handled["fail1"] = ent
+	eng.mu.Unlock()
+	eng.tick(context.Background())
+	if ad.answers != 2 {
+		t.Fatalf("retry answers=%d", ad.answers)
+	}
+}
+
+type failThenOKAdapter struct {
+	failN, answers int
+}
+
+func (a *failThenOKAdapter) Answer(context.Context, int) error {
+	a.answers++
+	if a.failN > 0 {
+		a.failN--
+		return context.DeadlineExceeded
+	}
+	return nil
+}
+func (a *failThenOKAdapter) Reject(context.Context, int) error { return nil }
+
 func TestEngineMissingConfigDefaultsHuman(t *testing.T) {
 	ad := &stubAdapter{}
 	eng := &Engine{
@@ -67,7 +113,7 @@ func TestEngineMissingConfigDefaultsHuman(t *testing.T) {
 		Watch:      &stubWatch{list: []Incoming{{Key: "r", Slot: 0}}},
 		Adapter:    ad,
 	}
-	eng.handled = map[string]time.Time{}
+	eng.handled = map[string]handledEntry{}
 	eng.tick(context.Background())
 	if ad.answers != 0 || ad.rejects != 0 {
 		t.Fatalf("want human no-op, got a=%d r=%d", ad.answers, ad.rejects)

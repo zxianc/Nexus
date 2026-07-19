@@ -28,6 +28,13 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("callpolicy ")
 
+	lockPath := envOr("CALLPOLICY_LOCK", "/data/adb/nexus/run/callpolicy.lock")
+	lock, err := acquireSingletonLock(lockPath)
+	if err != nil {
+		log.Fatalf("another nexus_callpolicy is running (lock %s): %v", lockPath, err)
+	}
+	defer func() { _ = lock.Close() }()
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 

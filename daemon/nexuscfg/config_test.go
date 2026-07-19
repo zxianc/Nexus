@@ -98,13 +98,21 @@ func TestRedactHidesNotifySecret(t *testing.T) {
 	}
 }
 
-func TestApplyPUTNotifyEnabled(t *testing.T) {
-	cur := Default()
-	next, _, err := ApplyPUT(cur, []byte(`{"notify":{"enabled":true,"sms":{"enabled":false}}}`))
-	if err != nil {
-		t.Fatal(err)
+func TestNeedsCallstackRestart(t *testing.T) {
+	a, b := Default(), Default()
+	if NeedsCallstackRestart(a, b) {
+		t.Fatal("same")
 	}
-	if !next.Notify.Enabled || next.Notify.SMS.Enabled {
-		t.Fatalf("%+v", next.Notify)
+	b.Sims[0].Policy = PolicyAI
+	if NeedsCallstackRestart(a, b) {
+		t.Fatal("sims-only should not restart callstack")
+	}
+	b.Notify.Enabled = true
+	if NeedsCallstackRestart(a, b) {
+		t.Fatal("notify-only should not restart callstack")
+	}
+	b.LLM.BargeIn = true
+	if !NeedsCallstackRestart(a, b) {
+		t.Fatal("llm change should restart")
 	}
 }

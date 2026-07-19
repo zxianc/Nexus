@@ -540,3 +540,26 @@ func NeedsEngineRestart(before, after Config) bool {
 		before.Paths.TTSModel != after.Paths.TTSModel ||
 		before.Paths.EngineSock != after.Paths.EngineSock
 }
+
+// NeedsCallstackRestart is true when ai_call/engine must be restarted after a config save.
+// Sims policy and notify settings are hot-read by their daemons — no callstack restart.
+func NeedsCallstackRestart(before, after Config) bool {
+	if NeedsEngineRestart(before, after) {
+		return true
+	}
+	if before.LLM.Enabled != after.LLM.Enabled ||
+		before.LLM.Model != after.LLM.Model ||
+		before.LLM.APIKey != after.LLM.APIKey ||
+		before.LLM.BargeIn != after.LLM.BargeIn ||
+		before.LLM.MaxMsgs != after.LLM.MaxMsgs ||
+		before.LLM.SystemPrompt != after.LLM.SystemPrompt {
+		return true
+	}
+	if before.STT != after.STT || before.TTS != after.TTS {
+		return true
+	}
+	if before.Paths.ArchiveDir != after.Paths.ArchiveDir {
+		return true
+	}
+	return false
+}

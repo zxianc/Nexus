@@ -11,10 +11,10 @@ import (
 
 // Incoming is one ringing call observation.
 type Incoming struct {
-	Key    string // dedupe key
-	Slot   int
-	Peer   string
-	Local  string
+	Key     string // dedupe key
+	Slot    int
+	Peer    string
+	Local   string
 	RawHint string
 }
 
@@ -27,6 +27,11 @@ type CallAdapter interface {
 	Reject(ctx context.Context, slot int) error
 }
 
+type handledEntry struct {
+	at      time.Time
+	success bool
+}
+
 type Engine struct {
 	ConfigPath string
 	Interval   time.Duration
@@ -34,11 +39,11 @@ type Engine struct {
 	Adapter    CallAdapter
 
 	mu      sync.Mutex
-	handled map[string]time.Time
+	handled map[string]handledEntry
 }
 
 func (e *Engine) Run(ctx context.Context) error {
-	e.handled = map[string]time.Time{}
+	e.handled = map[string]handledEntry{}
 	iv := e.Interval
 	if iv <= 0 {
 		iv = 800 * time.Millisecond
@@ -68,10 +73,17 @@ func (e *Engine) tick(ctx context.Context) {
 	now := time.Now()
 	e.mu.Lock()
 	if e.handled == nil {
-		e.handled = map[string]time.Time{}
+		e.handled = map[string]handledEntry{}
 	}
-	for k, ts := range e.handled {
-		if now.Sub(ts) > 2*time.Minute {
+	for k, ent := range e.handled {
+		if ent.success {
+			if now.Sub(ent.at) > 2*time.Minute {
+				delete(e.handled, k)
+			}
+			continue
+		}
+		// Failed attempts: drop after 2s so we can retry while still ringing.
+		if now.Sub(ent.at) > 2*time.Second {
 			delete(e.handled, k)
 		}
 	}
@@ -87,7 +99,7 @@ func (e *Engine) tick(ctx context.Context) {
 			e.mu.Unlock()
 			continue
 		}
-		e.handled[key] = now
+		e.handled[key] = handledEntry{at: now, success: false}
 		e.mu.Unlock()
 
 		pol := nexuscfg.PolicyForSlot(cfg, in.Slot)
@@ -95,21 +107,31 @@ func (e *Engine) tick(ctx context.Context) {
 			in.Slot, in.Peer, in.Local, pol, in.RawHint)
 		switch pol {
 		case nexuscfg.PolicyHuman:
-			// no-op
+			e.markHandled(key, true) // suppress log spam for human rings
 		case nexuscfg.PolicyReject:
 			if err := e.Adapter.Reject(ctx, in.Slot); err != nil {
 				log.Printf("reject: %v", err)
+				// leave success=false → retry after 2s
 			} else {
 				log.Printf("reject ok slot=%d", in.Slot)
+				e.markHandled(key, true)
 			}
 		case nexuscfg.PolicyAI:
 			if err := e.Adapter.Answer(ctx, in.Slot); err != nil {
 				log.Printf("answer: %v", err)
+				// leave success=false → retry after 2s while still ringing
 			} else {
 				log.Printf("answer ok (ai) slot=%d", in.Slot)
+				e.markHandled(key, true)
 			}
 		}
 	}
+}
+
+func (e *Engine) markHandled(key string, success bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.handled[key] = handledEntry{at: time.Now(), success: success}
 }
 
 func itoa(n int) string {
