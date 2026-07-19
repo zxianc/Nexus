@@ -40,8 +40,10 @@ func TestSnapshotAndReset(t *testing.T) {
 }
 
 func TestBuildCallArchive(t *testing.T) {
-	body := BuildCallArchive("2026-07-19 15:59:01", "对方要放门口。", "对方: 外卖到了\n助理: 好的。\n")
-	for _, p := range []string{"## 摘要", "对方要放门口。", "## 对话", "对方: 外卖到了", "# 通话记录"} {
+	body := BuildCallArchive("2026-07-19 15:59:01", "对方要放门口。", "对方: 外卖到了\n助理: 好的。\n", CallArchiveMeta{
+		Peer: "177", Local: "卡1 CMCC", Policy: "ai",
+	})
+	for _, p := range []string{"## 摘要", "对方要放门口。", "## 对话", "对方: 外卖到了", "# 通话记录", "主叫: 177", "本机: 卡1 CMCC", "策略: ai"} {
 		if !strings.Contains(body, p) {
 			t.Fatalf("missing %q in %s", p, body)
 		}

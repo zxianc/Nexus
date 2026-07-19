@@ -404,6 +404,7 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 | Magisk 开机自启 `ai_call` + `nexus_engine` | ✅ `nexus_runtime` `service.sh` |
 | 本机配置 WebUI | ✅ `nexus_webui` → `http://127.0.0.1:8787` |
 | 双卡来电策略 | ✅ `nexus_callpolicy`（`human` / `ai` / `reject`） |
+| AI 接听时静麦保 TX | TODO 后续（HAL/mixer；勿用系统静音） |
 
 目标音频方案（全 AI）：`DL → STT → LLM → TTS → 1.E 注入`；**现行文本存档**；语音 mix / 企微+短信见 TODO。见 [`plan.md`](plan.md)。
 

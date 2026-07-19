@@ -11,14 +11,54 @@ import (
 const DefaultPath = "/data/adb/nexus/config.json"
 
 type Config struct {
-	Schema int   `json:"schema"`
-	WebUI  WebUI `json:"webui"`
-	LLM    LLM   `json:"llm"`
-	STT    STT   `json:"stt"`
-	TTS    TTS   `json:"tts"`
-	Paths  Paths `json:"paths"`
-	Sims   []Sim `json:"sims"`
+	Schema int    `json:"schema"`
+	WebUI  WebUI  `json:"webui"`
+	LLM    LLM    `json:"llm"`
+	STT    STT    `json:"stt"`
+	TTS    TTS    `json:"tts"`
+	Paths  Paths  `json:"paths"`
+	Sims   []Sim  `json:"sims"`
+	Notify Notify `json:"notify"`
 }
+
+// Notify is WeCom / SMS outbound configuration.
+type Notify struct {
+	Enabled bool         `json:"enabled"`
+	Channel string       `json:"channel"` // wecom_external | wecom_webhook
+	WeCom   NotifyWeCom  `json:"wecom"`
+	SMS     NotifySMS    `json:"sms"`
+	Call    NotifyCall   `json:"call"`
+}
+
+type NotifyWeCom struct {
+	CorpID         string `json:"corp_id"`
+	Secret         string `json:"secret"`
+	AgentID        int    `json:"agent_id"`
+	ExternalUserID string `json:"external_userid"`
+	Sender         string `json:"sender"` // WeCom member userid who owns the external contact
+	ToUser         string `json:"touser"` // optional: app message to member (fallback)
+	WebhookURL     string `json:"webhook_url"`
+}
+
+type NotifySMS struct {
+	Enabled bool `json:"enabled"`
+	PollMs  int  `json:"poll_ms"`
+}
+
+type NotifyCall struct {
+	Enabled            bool `json:"enabled"`
+	MaxTranscriptChars int  `json:"max_transcript_chars"`
+}
+
+func DefaultNotify() Notify {
+	return Notify{
+		Enabled: false,
+		Channel: "wecom_webhook",
+		SMS:     NotifySMS{Enabled: true, PollMs: 3000},
+		Call:    NotifyCall{Enabled: true, MaxTranscriptChars: 3500},
+	}
+}
+
 
 // Policy values for per-SIM incoming call handling.
 const (
@@ -82,7 +122,8 @@ func Default() Config {
 			STTModel:   "/data/adb/modules/nexus_models/models/sense-voice",
 			TTSModel:   "/data/adb/modules/nexus_models/models/vits-zh-ll",
 		},
-		Sims: DefaultSims(),
+		Sims:   DefaultSims(),
+		Notify: DefaultNotify(),
 	}
 }
 
@@ -160,6 +201,35 @@ func ensureSims(cfg *Config) {
 	}
 }
 
+func ensureNotify(cfg *Config) {
+	d := DefaultNotify()
+	unconfigured := cfg.Notify.Channel == "" &&
+		strings.TrimSpace(cfg.Notify.WeCom.CorpID) == "" &&
+		strings.TrimSpace(cfg.Notify.WeCom.Secret) == "" &&
+		strings.TrimSpace(cfg.Notify.WeCom.WebhookURL) == "" &&
+		!cfg.Notify.Enabled
+	if unconfigured {
+		// Legacy configs without notify: keep sub-feature defaults ready.
+		cfg.Notify.SMS.Enabled = d.SMS.Enabled
+		cfg.Notify.Call.Enabled = d.Call.Enabled
+	}
+	if cfg.Notify.Channel == "" {
+		cfg.Notify.Channel = d.Channel
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Notify.Channel)) {
+	case "wecom_external":
+		cfg.Notify.Channel = "wecom_external"
+	default:
+		cfg.Notify.Channel = "wecom_webhook"
+	}
+	if cfg.Notify.SMS.PollMs <= 0 {
+		cfg.Notify.SMS.PollMs = d.SMS.PollMs
+	}
+	if cfg.Notify.Call.MaxTranscriptChars <= 0 {
+		cfg.Notify.Call.MaxTranscriptChars = d.Call.MaxTranscriptChars
+	}
+}
+
 func Load(path string) (Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -173,6 +243,7 @@ func Load(path string) (Config, error) {
 		cfg.Schema = 1
 	}
 	ensureSims(&cfg)
+	ensureNotify(&cfg)
 	return cfg, nil
 }
 
@@ -192,6 +263,7 @@ func SaveAtomic(path string, cfg Config) error {
 		cfg.Schema = 1
 	}
 	ensureSims(&cfg)
+	ensureNotify(&cfg)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -253,7 +325,46 @@ func Redact(cfg Config) map[string]any {
 			"stt_model":   cfg.Paths.STTModel,
 			"tts_model":   cfg.Paths.TTSModel,
 		},
-		"sims": redactSims(cfg.Sims),
+		"sims":   redactSims(cfg.Sims),
+		"notify": redactNotify(cfg.Notify),
+	}
+}
+
+func redactNotify(n Notify) map[string]any {
+	cfg := Config{Notify: n}
+	ensureNotify(&cfg)
+	ensure := cfg.Notify
+	secretSet := strings.TrimSpace(ensure.WeCom.Secret) != ""
+	hint := ""
+	if secretSet {
+		k := ensure.WeCom.Secret
+		if len(k) >= 4 {
+			hint = k[len(k)-4:]
+		} else {
+			hint = k
+		}
+	}
+	return map[string]any{
+		"enabled": ensure.Enabled,
+		"channel": ensure.Channel,
+		"wecom": map[string]any{
+			"corp_id_set":         strings.TrimSpace(ensure.WeCom.CorpID) != "",
+			"secret_set":          secretSet,
+			"secret_hint":         hint,
+			"agent_id":            ensure.WeCom.AgentID,
+			"external_userid_set": strings.TrimSpace(ensure.WeCom.ExternalUserID) != "",
+			"sender_set":          strings.TrimSpace(ensure.WeCom.Sender) != "",
+			"touser_set":          strings.TrimSpace(ensure.WeCom.ToUser) != "",
+			"webhook_url_set":     strings.TrimSpace(ensure.WeCom.WebhookURL) != "",
+		},
+		"sms": map[string]any{
+			"enabled": ensure.SMS.Enabled,
+			"poll_ms": ensure.SMS.PollMs,
+		},
+		"call": map[string]any{
+			"enabled":              ensure.Call.Enabled,
+			"max_transcript_chars": ensure.Call.MaxTranscriptChars,
+		},
 	}
 }
 
@@ -302,7 +413,18 @@ type putBody struct {
 		STTModel   *string `json:"stt_model"`
 		TTSModel   *string `json:"tts_model"`
 	} `json:"paths"`
-	Sims []Sim `json:"sims"`
+	Sims   []Sim `json:"sims"`
+	Notify *struct {
+		Enabled *bool `json:"enabled"`
+		SMS     *struct {
+			Enabled *bool `json:"enabled"`
+			PollMs  *int  `json:"poll_ms"`
+		} `json:"sms"`
+		Call *struct {
+			Enabled            *bool `json:"enabled"`
+			MaxTranscriptChars *int  `json:"max_transcript_chars"`
+		} `json:"call"`
+	} `json:"notify"`
 }
 
 func ApplyPUT(current Config, body []byte) (Config, bool, error) {
@@ -387,6 +509,28 @@ func ApplyPUT(current Config, body []byte) (Config, bool, error) {
 			})
 		}
 		ensureSims(&next)
+	}
+	if p.Notify != nil {
+		if p.Notify.Enabled != nil {
+			next.Notify.Enabled = *p.Notify.Enabled
+		}
+		if p.Notify.SMS != nil {
+			if p.Notify.SMS.Enabled != nil {
+				next.Notify.SMS.Enabled = *p.Notify.SMS.Enabled
+			}
+			if p.Notify.SMS.PollMs != nil {
+				next.Notify.SMS.PollMs = *p.Notify.SMS.PollMs
+			}
+		}
+		if p.Notify.Call != nil {
+			if p.Notify.Call.Enabled != nil {
+				next.Notify.Call.Enabled = *p.Notify.Call.Enabled
+			}
+			if p.Notify.Call.MaxTranscriptChars != nil {
+				next.Notify.Call.MaxTranscriptChars = *p.Notify.Call.MaxTranscriptChars
+			}
+		}
+		ensureNotify(&next)
 	}
 	return next, NeedsEngineRestart(current, next), nil
 }

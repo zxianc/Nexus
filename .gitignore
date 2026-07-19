@@ -24,9 +24,11 @@ magisk_modules/**/bin/ai_call
 magisk_modules/**/bin/nexus_engine
 magisk_modules/**/bin/nexus_webui
 magisk_modules/**/bin/nexus_callpolicy
+magisk_modules/**/bin/nexus_notify
 magisk_modules/**/bin/sherpa-onnx-*
 daemon/**/nexus_webui_arm64
 daemon/**/nexus_callpolicy_arm64
+daemon/**/nexus_notify_arm64
 magisk_modules/**/lib/*.so
 magisk_modules/**/models/sense-voice/**
 magisk_modules/**/models/vits-zh-ll/**

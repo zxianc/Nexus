@@ -1,6 +1,9 @@
 package llm
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCallSession_BuildsWithSystemAndHistory(t *testing.T) {
 	s := NewCallSession(10)
@@ -10,8 +13,11 @@ func TestCallSession_BuildsWithSystemAndHistory(t *testing.T) {
 	if len(msgs) != 3 {
 		t.Fatalf("len=%d msgs=%v", len(msgs), msgs)
 	}
-	if msgs[0].Role != "system" || msgs[0].Content != "sys" {
+	if msgs[0].Role != "system" || !strings.Contains(msgs[0].Content, "sys") {
 		t.Fatalf("system=%+v", msgs[0])
+	}
+	if !strings.Contains(msgs[0].Content, "当前时间：") {
+		t.Fatalf("expected time injection: %+v", msgs[0])
 	}
 	if msgs[1].Role != "user" || msgs[1].Content != "外卖到了" {
 		t.Fatalf("user=%+v", msgs[1])

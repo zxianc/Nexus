@@ -58,7 +58,7 @@ if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
   export DEEPSEEK_API_KEY
 fi
 
-# Never kill nexus_webui or nexus_callpolicy
+# Never kill nexus_webui, nexus_callpolicy, or nexus_notify
 pkill -9 ai_call 2>/dev/null || true
 if [ "$ENGINE_RESTART" = "1" ]; then
   pkill -9 nexus_engine 2>/dev/null || true

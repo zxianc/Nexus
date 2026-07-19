@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+// CallArchiveMeta is optional identity written into the archive header.
+type CallArchiveMeta struct {
+	Peer   string
+	Local  string
+	Policy string
+}
+
 // FormatTranscript renders history as human-readable Chinese dialogue lines.
 func FormatTranscript(hist []Message) string {
 	if len(hist) == 0 {
@@ -31,12 +38,31 @@ func FormatTranscript(hist []Message) string {
 }
 
 // BuildCallArchive builds a single markdown-ish file body for disk.
-func BuildCallArchive(started, summary, transcript string) string {
+func BuildCallArchive(started, summary, transcript string, meta CallArchiveMeta) string {
 	var b strings.Builder
 	b.WriteString("# 通话记录\n")
 	b.WriteString("时间: ")
 	b.WriteString(started)
 	b.WriteByte('\n')
+	peer := strings.TrimSpace(meta.Peer)
+	if peer == "" {
+		peer = "未知"
+	}
+	b.WriteString("主叫: ")
+	b.WriteString(peer)
+	b.WriteByte('\n')
+	local := strings.TrimSpace(meta.Local)
+	if local == "" {
+		local = "未知"
+	}
+	b.WriteString("本机: ")
+	b.WriteString(local)
+	b.WriteByte('\n')
+	if pol := strings.TrimSpace(meta.Policy); pol != "" {
+		b.WriteString("策略: ")
+		b.WriteString(pol)
+		b.WriteByte('\n')
+	}
 	b.WriteString("\n## 摘要\n")
 	b.WriteString(strings.TrimSpace(summary))
 	b.WriteString("\n\n## 对话\n")

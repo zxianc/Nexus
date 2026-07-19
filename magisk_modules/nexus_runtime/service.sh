@@ -1,5 +1,6 @@
 #!/system/bin/sh
-# Boot-start nexus_engine + ai_call + nexus_webui + nexus_callpolicy. Requires nexus_models + nexus_audio_hook.
+# Boot-start nexus_engine + ai_call + nexus_webui + nexus_callpolicy + nexus_notify.
+# Requires nexus_models + nexus_audio_hook.
 
 MODDIR=${0%/*}
 NEXUS=/data/adb/nexus
@@ -108,7 +109,8 @@ fi
 CALLPOLICY="${CALLPOLICY_BIN:-$BIN/nexus_callpolicy}"
 CLOG=/data/vendor/ai_hook/nexus_callpolicy.log
 if [ -x "$CALLPOLICY" ]; then
-  pkill -9 nexus_callpolicy 2>/dev/null || true
+  kill -9 $(pidof nexus_callpolicy) 2>/dev/null || true
+  sleep 1
   : >"$CLOG"
   logmsg "starting nexus_callpolicy"
   nohup "$CALLPOLICY" -config "$CFG" >>"$CLOG" 2>&1 &
@@ -116,6 +118,18 @@ else
   logmsg "nexus_callpolicy binary missing (optional until packed)"
 fi
 
+NOTIFY="${NOTIFY_BIN:-$BIN/nexus_notify}"
+NLOG=/data/vendor/ai_hook/nexus_notify.log
+if [ -x "$NOTIFY" ]; then
+  kill -9 $(pidof nexus_notify) 2>/dev/null || true
+  sleep 1
+  : >"$NLOG"
+  logmsg "starting nexus_notify"
+  nohup "$NOTIFY" -config "$CFG" -archive-dir "$ARCHIVE_DIR" >>"$NLOG" 2>&1 &
+else
+  logmsg "nexus_notify binary missing (optional until packed)"
+fi
+
 sleep 1
-ps -A 2>/dev/null | grep -E 'ai_call|nexus_engine|nexus_webui|nexus_callpolicy' >>"$LOG" || true
+ps -A 2>/dev/null | grep -E 'ai_call|nexus_engine|nexus_webui|nexus_callpolicy|nexus_notify' >>"$LOG" || true
 logmsg "boot start done"

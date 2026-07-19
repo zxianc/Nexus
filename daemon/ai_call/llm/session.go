@@ -3,6 +3,7 @@ package llm
 import (
 	"strings"
 	"sync"
+	"time"
 )
 
 // CallSession holds one phone-call's chat history (no system message stored).
@@ -102,9 +103,11 @@ func (s *CallSession) trimLocked() {
 }
 
 // Messages returns system + history copy for the next API call.
+// System prompt is expanded with current time ({{NOW}}) on every call.
 func (s *CallSession) Messages(system string) []Message {
 	out := make([]Message, 0, 1+16)
-	if sys := strings.TrimSpace(system); sys != "" {
+	sys := ExpandSystemPrompt(system, time.Now())
+	if sys != "" {
 		out = append(out, Message{Role: "system", Content: sys})
 	}
 	if s == nil {

@@ -5,6 +5,7 @@
 #   nexus_engine
 #   nexus_webui                  # 本机配置页 http://127.0.0.1:8787
 #   nexus_callpolicy             # 双卡来电策略（human/ai/reject）
+#   nexus_notify                 # 企微：通话摘要 + 双卡短信
 #
 # 必需（放在 ../lib/）:
 #   libonnxruntime.so

@@ -10,7 +10,7 @@
 ## 设备路径
 
 ```text
-/data/adb/modules/nexus_runtime/bin/{ai_call,nexus_engine,nexus_webui,nexus_callpolicy}
+/data/adb/modules/nexus_runtime/bin/{ai_call,nexus_engine,nexus_webui,nexus_callpolicy,nexus_notify}
 /data/adb/modules/nexus_runtime/lib/libonnxruntime.so
 /data/adb/modules/nexus_runtime/scripts/restart_callstack.sh
 /data/adb/modules/nexus_models/models/sense-voice/
@@ -27,15 +27,16 @@
 开机后在手机 Chrome 打开：**http://127.0.0.1:8787**（仅本机）。
 
 - 改 LLM / Key / 打断 / 路径等 → 保存后自动重启 `ai_call`（必要时 `nexus_engine`）
-- **不**杀 `nexus_webui` / `nexus_callpolicy`（双卡策略热读 config）
+- **不**杀 `nexus_webui` / `nexus_callpolicy` / `nexus_notify`（策略与通知热读 config）
 - WebUI 含「双卡策略」：`human` / `ai` / `reject`（默认双卡人工）
-- 设计见 `docs/superpowers/specs/2026-07-19-nexus-webui-design.md`、`2026-07-19-callpolicy-sims-design.md`
+- 设计见 `docs/superpowers/specs/2026-07-19-nexus-webui-design.md`、`2026-07-19-callpolicy-sims-design.md`、`2026-07-19-wecom-notify-design.md`
 
 打包前：
 
 ```bat
 copy daemon\nexus_webui\nexus_webui_arm64 magisk_modules\nexus_runtime\bin\nexus_webui
 copy daemon\nexus_callpolicy\nexus_callpolicy_arm64 magisk_modules\nexus_runtime\bin\nexus_callpolicy
+copy daemon\nexus_notify\nexus_notify_arm64 magisk_modules\nexus_runtime\bin\nexus_notify
 ```
 
 ## 打包前填充资产（勿提交大文件）
@@ -72,7 +73,7 @@ build.bat
 adb shell 'su -c "printf \"%s\" \"sk-...\" >/data/adb/nexus/secrets/deepseek.key; chmod 600 /data/adb/nexus/secrets/deepseek.key"'
 ```
 
-日志：`/data/vendor/ai_hook/nexus_runtime.log`、`ai_call.log`、`nexus_engine.log`、`nexus_webui.log`、`nexus_callpolicy.log`。
+日志：`/data/vendor/ai_hook/nexus_runtime.log`、`ai_call.log`、`nexus_engine.log`、`nexus_webui.log`、`nexus_callpolicy.log`、`nexus_notify.log`。
 
 ## 双卡来电策略
 
@@ -88,6 +89,22 @@ adb shell 'su -c "printf \"%s\" \"sk-...\" >/data/adb/nexus/secrets/deepseek.key
 - 检测：`telephony.registry` 的 `Phone Id` + `mCallState=1`
 - 接听优先 `KEYCODE_HEADSETHOOK`；拒接 `telecom endCall` / `KEYCODE_ENDCALL`；均校验通话状态
 - 设计：`docs/superpowers/specs/2026-07-19-callpolicy-sims-design.md`
+- **TODO（后续）：** AI 接听时静麦保 TX（对方只听 AI，环境麦不上行）— 见 `doc/03_pcm_hook_next.md`
+
+## 企微通知（通话 + 双卡短信）
+
+进程 **`nexus_notify`**（开机拉起；**不被** `restart_callstack` 杀掉）。
+
+- **推荐通道：** `notify.channel=wecom_webhook`（企微**内部群**机器人；无企业可信 IP）
+- 通话：`ai_call` 落盘 `call_*.txt`（含主叫/本机/策略）+ `.notify` 旁路 → Webhook
+- 短信：轮询 `content://sms/inbox`；`sub_id`→卡槽用 `dumpsys isub` 映射（非简单 `sub_id-1`）
+- 配置：`config.json` → `notify`（默认 `enabled: false`；Webhook URL 手写、chmod 600）
+- 设计：`docs/superpowers/specs/2026-07-19-wecom-notify-design.md`
+- 日志：`/data/vendor/ai_hook/nexus_notify.log`
+
+```bat
+copy daemon\nexus_notify\nexus_notify_arm64 magisk_modules\nexus_runtime\bin\nexus_notify
+```
 
 ## `env.sh` / `config.json`
 

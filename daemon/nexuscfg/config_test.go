@@ -80,3 +80,31 @@ func TestNeedsEngineRestart(t *testing.T) {
 		t.Fatal("stt path")
 	}
 }
+
+func TestRedactHidesNotifySecret(t *testing.T) {
+	cfg := Default()
+	cfg.Notify.Enabled = true
+	cfg.Notify.WeCom.CorpID = "wwcorp"
+	cfg.Notify.WeCom.Secret = "sec-abcdefgh"
+	cfg.Notify.WeCom.ExternalUserID = "woXXX"
+	m := Redact(cfg)
+	n := m["notify"].(map[string]any)
+	w := n["wecom"].(map[string]any)
+	if _, ok := w["secret"]; ok {
+		t.Fatal("secret must not appear")
+	}
+	if w["secret_set"] != true || w["secret_hint"] != "efgh" {
+		t.Fatalf("wecom redact=%v", w)
+	}
+}
+
+func TestApplyPUTNotifyEnabled(t *testing.T) {
+	cur := Default()
+	next, _, err := ApplyPUT(cur, []byte(`{"notify":{"enabled":true,"sms":{"enabled":false}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !next.Notify.Enabled || next.Notify.SMS.Enabled {
+		t.Fatalf("%+v", next.Notify)
+	}
+}

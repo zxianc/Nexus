@@ -61,13 +61,14 @@
 - [x] **常驻引擎（方案 B）：** `nexus_engine` + `-backend engine`；跨通话常驻
 - [x] **DeepSeek 流式（方案 A）：** `-llm`；STT → SSE → 切句 TTS→TX；**通话听验通过**
 - [x] **通内上下文：** `CallSession`；挂断清空；默认最多 24 条非 system（`LLM_MAX_MSGS`，防费用/延迟）
-- [x] **文本存档：** 挂断后落盘对话全文 + DeepSeek 摘要 → `/data/vendor/ai_hook/calls/call_*.txt`
+- [x] **文本存档：** 挂断后落盘对话全文 + DeepSeek 摘要 → `/data/vendor/ai_hook/calls/call_*.txt`（**telephony idle 或 UDS 断开均触发**；防 HAL 粘连 sock 不落盘）
 - [ ] **TODO（延期）** 语音存档 `mix(DL, TTS)`（需按 TX 播放时间轴对齐，防错位）
 - [ ] **TODO（延期）** 企微推送 + 短信转发（**同一后续里程碑一起做**：摘要/全文推送）
-- [ ] （可选）静音麦但仍允许 AI TX
-- [ ] （可选）开机自启 `ai_call` / 业务 Magisk 模块
+- [ ] **TODO（后续）** AI 接听时静音环境麦、保留 incall-music TX：对方整通只听 AI。勿用系统通话静音（会挡 TTS）。需 HAL/mixer 标定「只关麦增益」。
+- [x] 开机自启 `ai_call` / `nexus_engine` / `nexus_webui` / `nexus_callpolicy`（`nexus_runtime`）
+- [x] 本机 WebUI + 双卡策略
 
-**注意：** 通话「静音」会挡上行（含 TTS）；测试勿静音。Key 放设备 `…/deepseek.key`，勿进 git。
+**注意：** 通话「静音」会挡上行（含 TTS）；测试勿静音。Key 放设备 `config.json` / `…/deepseek.key`，勿进 git。
 
 ### TODO — Magisk 三模块（`nexus_audio_hook` / `nexus_runtime` / `nexus_models`）
 

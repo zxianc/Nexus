@@ -89,6 +89,8 @@ type llmOut struct {
 	Session    *llm.CallSession
 	ArchiveDir string
 	Inflight   *int32 // replyLLM in-flight count; shared
+	Identity   *callIdentity
+	ConfigPath string
 }
 
 type speakOpts struct {
@@ -252,6 +254,8 @@ func main() {
 			Session:    llm.NewCallSession(*llmMaxMsgs),
 			ArchiveDir: *archiveDir,
 			Inflight:   new(int32),
+			Identity:   &callIdentity{},
+			ConfigPath: envOr("NEXUS_CONFIG", nexuscfg.DefaultPath),
 		}
 		if *echoTTS {
 			log.Printf("note: -llm overrides -echo-tts")
@@ -276,6 +280,10 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	if llmCfg.Enabled {
+		go watchCallEndFinalizer(ctx, llmCfg, 1500*time.Millisecond)
+	}
 
 	uttCh := make(chan Utterance, *queueSize)
 	var wg sync.WaitGroup
@@ -302,7 +310,7 @@ func main() {
 		runStream(ctx, conn, *dump, uttCh, llmCfg.Session)
 		_ = conn.Close()
 		if llmCfg.Enabled && llmCfg.Session != nil {
-			finalizeCallArchive(ctx, llmCfg)
+			finalizeCallArchive(ctx, llmCfg, "uds-disconnect")
 		}
 		log.Printf("disconnected, will reconnect")
 		select {
@@ -640,7 +648,7 @@ func replyLLM(ctx context.Context, userText string, llmCfg llmOut, ttsCfg ttsOut
 			return fmt.Errorf("llm: call session reset (dropped turn)")
 		}
 	}
-	msgs := []llm.Message{{Role: "system", Content: llmCfg.System}, {Role: "user", Content: userText}}
+	msgs := []llm.Message{{Role: "system", Content: llm.ExpandSystemPrompt(llmCfg.System, time.Now())}, {Role: "user", Content: userText}}
 	if llmCfg.Session != nil {
 		msgs = llmCfg.Session.Messages(llmCfg.System)
 	}
@@ -696,8 +704,15 @@ func replyLLM(ctx context.Context, userText string, llmCfg llmOut, ttsCfg ttsOut
 }
 
 // finalizeCallArchive writes transcript + DeepSeek summary to disk, then clears session.
-// WeCom / SMS push is deferred (same future milestone).
-func finalizeCallArchive(parent context.Context, llmCfg llmOut) {
+// Safe to call from UDS disconnect and telephony-idle watcher; empty hist is a no-op.
+// Writes a `.notify` sidecar for nexus_notify (WeCom); push is async and non-blocking.
+func finalizeCallArchive(parent context.Context, llmCfg llmOut, reason string) {
+	if !llmCfg.Enabled || llmCfg.Session == nil {
+		return
+	}
+	archiveMu.Lock()
+	defer archiveMu.Unlock()
+
 	// Wait briefly so in-flight STT→LLM→TTS can commit the last turn.
 	deadline := time.Now().Add(90 * time.Second)
 	for llmCfg.Inflight != nil && atomic.LoadInt32(llmCfg.Inflight) > 0 && time.Now().Before(deadline) {
@@ -707,7 +722,7 @@ func finalizeCallArchive(parent context.Context, llmCfg llmOut) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	hist := llmCfg.Session.SnapshotAndReset()
-	log.Printf("call session cleared turns=%d", countUserTurns(hist))
+	log.Printf("call session cleared reason=%s turns=%d", reason, countUserTurns(hist))
 	if len(hist) == 0 {
 		return
 	}
@@ -715,7 +730,7 @@ func finalizeCallArchive(parent context.Context, llmCfg llmOut) {
 	transcript := llm.FormatTranscript(hist)
 	summary := "(摘要生成失败或跳过)"
 	if llmCfg.Client != nil {
-		ctx, cancel := context.WithTimeout(parent, 60*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 		s, err := llmCfg.Client.Chat(ctx, []llm.Message{
 			{Role: "system", Content: llm.SummaryPrompt},
@@ -727,7 +742,7 @@ func finalizeCallArchive(parent context.Context, llmCfg llmOut) {
 			summary = s
 		}
 	}
-	body := llm.BuildCallArchive(started.Format("2006-01-02 15:04:05"), summary, transcript)
+	body := llm.BuildCallArchive(started.Format("2006-01-02 15:04:05"), summary, transcript, archiveMeta(llmCfg))
 	dir := llmCfg.ArchiveDir
 	if dir == "" {
 		dir = defaultArchiveDir
@@ -742,8 +757,62 @@ func finalizeCallArchive(parent context.Context, llmCfg llmOut) {
 		return
 	}
 	_ = os.Chmod(path, 0666)
-	log.Printf("call archive ok path=%s bytes=%d summary=%q", path, len(body), summary)
+	log.Printf("call archive ok reason=%s path=%s bytes=%d summary=%q", reason, path, len(body), summary)
+	// Sidecar for nexus_notify (WeCom). Best-effort; never fail the archive path.
+	notifyMarker := path + ".notify"
+	if err := os.WriteFile(notifyMarker, []byte{}, 0666); err != nil {
+		log.Printf("archive notify marker: %v", err)
+	} else {
+		_ = os.Chmod(notifyMarker, 0666)
+	}
+	if llmCfg.Identity != nil {
+		llmCfg.Identity.clear()
+	}
 }
+
+func archiveMeta(llmCfg llmOut) llm.CallArchiveMeta {
+	meta := llm.CallArchiveMeta{}
+	peer, slot, hasSlot := llmCfg.Identity.snapshot()
+	meta.Peer = peer
+	cfgPath := llmCfg.ConfigPath
+	if cfgPath == "" {
+		cfgPath = nexuscfg.DefaultPath
+	}
+	if cfg, err := nexuscfg.Load(cfgPath); err == nil {
+		if hasSlot {
+			meta.Policy = nexuscfg.PolicyForSlot(cfg, slot)
+			meta.Local = formatSimLocal(cfg.Sims, slot)
+		} else if len(cfg.Sims) > 0 {
+			// Fallback: first sim label if slot unknown.
+			meta.Local = formatSimLocal(cfg.Sims, cfg.Sims[0].Slot)
+			meta.Policy = nexuscfg.NormalizePolicy(cfg.Sims[0].Policy)
+		}
+	}
+	return meta
+}
+
+func formatSimLocal(sims []nexuscfg.Sim, slot int) string {
+	for _, s := range sims {
+		if s.Slot != slot {
+			continue
+		}
+		label := s.Label
+		if label == "" {
+			label = fmt.Sprintf("卡%d", slot+1)
+		}
+		parts := []string{label}
+		if c := strings.TrimSpace(s.Carrier); c != "" {
+			parts = append(parts, c)
+		}
+		if n := strings.TrimSpace(s.Number); n != "" {
+			parts = append(parts, "("+n+")")
+		}
+		return strings.Join(parts, " ")
+	}
+	return fmt.Sprintf("卡%d", slot+1)
+}
+
+var archiveMu sync.Mutex
 
 func countUserTurns(hist []llm.Message) int {
 	n := 0

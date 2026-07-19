@@ -495,7 +495,14 @@
 - **音色：** 现行 `vits-zh-ll` 为 **5 说话人，`sid` 0～4**（见 `magisk_modules/nexus_models/models/vits-zh-ll/README.md`）。
 - **env.sh：** 仅被 `service.sh` / `restart_callstack.sh` source；已 export 会盖过 config.json。
 
-## 2026-07-19 — 双卡来电策略（nexus_callpolicy）
+## 2026-07-19 — 通话存档：telephony idle 强制落盘
+
+- **问题：** 存档原只在 `pcm.sock` 断开时触发；挂断后 HAL 仍推流时永不落盘。
+- **修复：** `ai_call` 轮询 `telephony.registry`，通话离开 RINGING/OFFHOOK 并防抖后 `finalizeCallArchive`；与 UDS 断开共用锁，空 hist 幂等。
+
+- **需求：** AI 代接通话时对方整通只听 AI，环境麦不上行。
+- **现状：** TTS 走 incall-music；真麦在 ADSP 上行混入；系统静音会挡 TTS。
+- **后续：** HAL/mixer 标定「只关麦增益、保留 Incall_Music」；记在 `03_pcm_hook_next.md`。
 
 - **目标：** 按卡槽 WebUI 可配 `human` / `ai` / `reject`；默认双卡人工响铃。
 - **做了什么：** `nexuscfg.sims[]`；WebUI「双卡策略」（卡信息只读）；`nexus_callpolicy` 轮询 registry + shell Answer/Reject；`service.sh` 拉起；`restart_callstack` 不杀。
@@ -504,4 +511,13 @@
   - 接听：`acceptRingingCall` 在 shell `ANSWER_PHONE_CALLS=ignore` 时静默失败；`KEYCODE_CALL` 无效 → **`KEYCODE_HEADSETHOOK` + appops allow**。
   - 检测误报：telecom 历史 `Enter RINGING` → 改以 `telephony.registry` `mCallState=1` 为主。
 - **设计：** `docs/superpowers/specs/2026-07-19-callpolicy-sims-design.md`；代码 `daemon/nexus_callpolicy/`。
+
+## 2026-07-19 — 企微通知 `nexus_notify`（Webhook + 双卡短信）
+
+- **通道：** 家用动态 IP 无法配企业可信 IP → 改用**内部群**群机器人 Webhook（外部群不能加机器人）。
+- **进程：** `daemon/nexus_notify`；`service.sh` 拉起；`restart_callstack` 不杀。
+- **通话：** `finalizeCallArchive` 写 txt + `.notify`；存档含主叫/本机/策略（registry + sims）。
+- **短信：** inbox 轮询；`sub_id`→slot 用 `dumpsys isub`（本机 slot0↔subId2，勿用 sub_id-1）。
+- **Android CGO=0：** 与 ai_call 相同，自定义 DNS + 系统 CA，否则 Webhook HTTPS 失败。
+- **设计/计划：** `docs/superpowers/specs|plans/2026-07-19-wecom-notify*.md`。
 
