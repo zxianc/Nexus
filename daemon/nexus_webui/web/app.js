@@ -48,6 +48,16 @@ async function loadConfig() {
   $("path_stt").value = paths.stt_model || "";
   $("path_tts").value = paths.tts_model || "";
   $("webui_port").value = webui.port || 8787;
+  const sims = c.sims || [];
+  fillSim(0, sims.find((s) => s.slot === 0) || { label: "—", carrier: "—", number: "—", policy: "human" });
+  fillSim(1, sims.find((s) => s.slot === 1) || { label: "—", carrier: "—", number: "—", policy: "human" });
+}
+
+function fillSim(slot, s) {
+  $("sim" + slot + "_label").textContent = s.label || "—";
+  $("sim" + slot + "_carrier").textContent = s.carrier || "—";
+  $("sim" + slot + "_number").textContent = s.number || "（系统未提供）";
+  $("sim" + slot + "_policy").value = s.policy || "human";
 }
 
 function collectForm() {
@@ -71,6 +81,10 @@ function collectForm() {
       tts_model: $("path_tts").value,
     },
     webui: { port: Number($("webui_port").value || 8787) },
+    sims: [
+      { slot: 0, policy: $("sim0_policy").value || "human" },
+      { slot: 1, policy: $("sim1_policy").value || "human" },
+    ],
   };
   const key = $("llm_api_key").value.trim();
   if (key) body.llm.api_key = key;
@@ -111,6 +125,15 @@ async function loadLogs() {
 }
 
 $("btnRefresh").onclick = () => refreshStatus().catch((e) => toast(String(e), true));
+$("btnSimsRefresh").onclick = async () => {
+  const j = await (await fetch("/api/sims/refresh", { method: "POST" })).json();
+  if (!j.ok) {
+    toast(j.error || "刷新卡信息失败", true);
+    return;
+  }
+  toast("卡信息已更新");
+  await loadConfig();
+};
 $("btnRestart").onclick = async () => {
   const j = await (await fetch("/api/restart", { method: "POST" })).json();
   if (!j.ok) toast(j.error || "重启失败", true);

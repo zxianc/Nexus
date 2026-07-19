@@ -42,6 +42,37 @@
         <label>Speaker id <input id="tts_sid" type="number" /></label>
       </fieldset>
       <fieldset>
+        <legend>双卡策略</legend>
+        <p class="hint">卡信息从系统读取（只读）。仅可改策略：默认「人工」= 响铃；「AI」自动接听；「拒接」自动挂断。</p>
+        <div class="row">
+          <button type="button" id="btnSimsRefresh">刷新卡信息</button>
+        </div>
+        <div class="sim-row" data-slot="0">
+          <strong>卡槽 0</strong>
+          <p class="sim-meta"><span id="sim0_label">—</span> · <span id="sim0_carrier">—</span></p>
+          <p class="sim-meta">号码 <span id="sim0_number">—</span></p>
+          <label>策略
+            <select id="sim0_policy">
+              <option value="human">人工（响铃）</option>
+              <option value="ai">自动接通 + AI</option>
+              <option value="reject">自动拒接</option>
+            </select>
+          </label>
+        </div>
+        <div class="sim-row" data-slot="1">
+          <strong>卡槽 1</strong>
+          <p class="sim-meta"><span id="sim1_label">—</span> · <span id="sim1_carrier">—</span></p>
+          <p class="sim-meta">号码 <span id="sim1_number">—</span></p>
+          <label>策略
+            <select id="sim1_policy">
+              <option value="human">人工（响铃）</option>
+              <option value="ai">自动接通 + AI</option>
+              <option value="reject">自动拒接</option>
+            </select>
+          </label>
+        </div>
+      </fieldset>
+      <fieldset>
         <legend>路径</legend>
         <label>engine sock <input id="path_engine_sock" /></label>
         <label>存档目录 <input id="path_archive" /></label>
@@ -61,6 +92,7 @@
         <option value="nexus_engine">nexus_engine</option>
         <option value="nexus_runtime">nexus_runtime</option>
         <option value="nexus_webui">nexus_webui</option>
+        <option value="nexus_callpolicy">nexus_callpolicy</option>
       </select>
       <input id="logLines" type="number" value="80" min="1" max="500" />
       <button type="button" id="btnLogs">加载</button>

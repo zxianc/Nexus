@@ -22,5 +22,9 @@
     "archive_dir": "/data/vendor/ai_hook/calls",
     "stt_model": "/data/adb/modules/nexus_models/models/sense-voice",
     "tts_model": "/data/adb/modules/nexus_models/models/vits-zh-ll"
-  }
+  },
+  "sims": [
+    { "slot": 0, "label": "卡1", "carrier": "", "number": "", "policy": "human" },
+    { "slot": 1, "label": "卡2", "carrier": "", "number": "", "policy": "human" }
+  ]
 }

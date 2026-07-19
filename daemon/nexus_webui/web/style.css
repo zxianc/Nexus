@@ -59,13 +59,12 @@ button {
 fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 0.75rem; }
 .toast { color: var(--ok); margin-top: 0.5rem; }
 .toast.err { color: var(--bad); }
-pre {
-  background: #0c1015;
+.hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem; }
+.sim-row {
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 0.75rem;
-  overflow: auto;
-  max-height: 40vh;
-  font-size: 0.75rem;
-  white-space: pre-wrap;
+  padding: 0.65rem;
+  margin-bottom: 0.65rem;
 }
+.sim-row strong { display: block; margin-bottom: 0.35rem; }
+.sim-meta { color: var(--muted); font-size: 0.9rem; margin: 0.2rem 0; }

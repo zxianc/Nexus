@@ -37,6 +37,7 @@ func NewServer(cfgPath, logDir, restartScript string) http.Handler {
 	mux.HandleFunc("/api/status", s.handleStatus)
 	mux.HandleFunc("/api/logs", s.handleLogs)
 	mux.HandleFunc("/api/restart", s.handleRestart)
+	mux.HandleFunc("/api/sims/refresh", s.handleSimsRefresh)
 	return mux
 }
 
@@ -65,12 +66,40 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
 			return
 		}
+		if device, err := discoverDeviceSims(r.Context()); err == nil && len(device) > 0 {
+			nexuscfg.MergeDeviceSims(&cfg, device)
+		}
 		writeJSON(w, 200, map[string]any{"ok": true, "config": nexuscfg.Redact(cfg)})
 	case http.MethodPut:
 		s.handlePutConfig(w, r)
 	default:
 		writeJSON(w, 405, map[string]any{"ok": false, "error": "method not allowed"})
 	}
+}
+
+func (s *Server) handleSimsRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]any{"ok": false, "error": "method not allowed"})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	device, err := discoverDeviceSims(r.Context())
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	nexuscfg.MergeDeviceSims(&cfg, device)
+	if err := nexuscfg.SaveAtomic(s.ConfigPath, cfg); err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "sims": nexuscfg.Redact(cfg)["sims"]})
 }
 
 func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +119,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error()})
 		return
+	}
+	// Keep identity from device; PUT only changes policy.
+	if device, err := discoverDeviceSims(r.Context()); err == nil && len(device) > 0 {
+		nexuscfg.MergeDeviceSims(&next, device)
 	}
 	if err := nexuscfg.SaveAtomic(s.ConfigPath, next); err != nil {
 		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
@@ -161,7 +194,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) statusMap() map[string]any {
-	names := []string{"ai_call", "nexus_engine", "nexus_webui"}
+	names := []string{"ai_call", "nexus_engine", "nexus_webui", "nexus_callpolicy"}
 	out := map[string]any{}
 	look := s.LookupPID
 	if look == nil {
@@ -183,6 +216,7 @@ var logFiles = map[string]string{
 	"nexus_engine":  "nexus_engine.log",
 	"nexus_runtime": "nexus_runtime.log",
 	"nexus_webui":   "nexus_webui.log",
+	"nexus_callpolicy": "nexus_callpolicy.log",
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {

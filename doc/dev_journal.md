@@ -495,14 +495,13 @@
 - **音色：** 现行 `vits-zh-ll` 为 **5 说话人，`sid` 0～4**（见 `magisk_modules/nexus_models/models/vits-zh-ll/README.md`）。
 - **env.sh：** 仅被 `service.sh` / `restart_callstack.sh` source；已 export 会盖过 config.json。
 
-<!-- 新条目模板（复制到文末填写）：
+## 2026-07-19 — 双卡来电策略（nexus_callpolicy）
 
-## YYYY-MM-DD — 标题
+- **目标：** 按卡槽 WebUI 可配 `human` / `ai` / `reject`；默认双卡人工响铃。
+- **做了什么：** `nexuscfg.sims[]`；WebUI「双卡策略」（卡信息只读）；`nexus_callpolicy` 轮询 registry + shell Answer/Reject；`service.sh` 拉起；`restart_callstack` 不杀。
+- **标定踩坑：**
+  - 拒接假阳性：`service call phone` Parcel 退出码被当成成功 → 改 `telecom endCall(35)` + **校验 mCallState**。
+  - 接听：`acceptRingingCall` 在 shell `ANSWER_PHONE_CALLS=ignore` 时静默失败；`KEYCODE_CALL` 无效 → **`KEYCODE_HEADSETHOOK` + appops allow**。
+  - 检测误报：telecom 历史 `Enter RINGING` → 改以 `telephony.registry` `mCallState=1` 为主。
+- **设计：** `docs/superpowers/specs/2026-07-19-callpolicy-sims-design.md`；代码 `daemon/nexus_callpolicy/`。
 
-- **目标：**
-- **做了什么：**
-- **现象 / 日志：**
-- **结论：**
-- **相关代码 / 提交：**
-
--->

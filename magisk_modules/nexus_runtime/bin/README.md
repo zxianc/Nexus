@@ -4,6 +4,7 @@
 #   ai_call
 #   nexus_engine
 #   nexus_webui                  # 本机配置页 http://127.0.0.1:8787
+#   nexus_callpolicy             # 双卡来电策略（human/ai/reject）
 #
 # 必需（放在 ../lib/）:
 #   libonnxruntime.so

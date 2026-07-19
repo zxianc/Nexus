@@ -137,7 +137,7 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 | 模块 ID | 内容 | 状态 |
 |---------|------|------|
 | **`nexus_audio_hook`** | HAL 注入 / UDS / DL / TX（原 `ai_audio_hook`，仅更名） | ✅ 改名 v2.2 |
-| **`nexus_runtime`** | `ai_call`、`nexus_engine`、ORT so、配置目录、开机自启 | ✅ 骨架 `magisk_modules/nexus_runtime`（填 bin 后打包） |
+| **`nexus_runtime`** | `ai_call`、`nexus_engine`、`nexus_webui`、`nexus_callpolicy`、ORT so、配置、开机自启 | ✅ `magisk_modules/nexus_runtime`（填 bin 后打包） |
 | **`nexus_models`** | SenseVoice + VITS 等大模型（与程序版本解耦） | ✅ 骨架 `magisk_modules/nexus_models`（填模型后打包） |
 
 - 可写配置/密钥建议：`/data/adb/nexus/`（`config.json`、`secrets/`），**不**写进 module 只读树  
@@ -147,7 +147,7 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 #### 定稿：HAL 只采集，用不用交给业务层
 
 - HAL：接通即 DL 旁路（UDS+落盘）；不按卡关采集；**暂不考虑省电关旁路**
-- Go/策略：是否 STT/AI、双卡接听策略等；见 [`03_pcm_hook_next.md`](03_pcm_hook_next.md)
+- Go/策略：是否 STT/AI、**双卡接听**（`nexus_callpolicy` + WebUI `sims[].policy`）；见设计 `docs/superpowers/specs/2026-07-19-callpolicy-sims-design.md`
 
 #### 定稿 / TODO：短信转发（未做）
 

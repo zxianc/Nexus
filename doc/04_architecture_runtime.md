@@ -403,6 +403,7 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 | 企微推送 + 短信转发 | TODO 捆绑后续 |
 | Magisk 开机自启 `ai_call` + `nexus_engine` | ✅ `nexus_runtime` `service.sh` |
 | 本机配置 WebUI | ✅ `nexus_webui` → `http://127.0.0.1:8787` |
+| 双卡来电策略 | ✅ `nexus_callpolicy`（`human` / `ai` / `reject`） |
 
 目标音频方案（全 AI）：`DL → STT → LLM → TTS → 1.E 注入`；**现行文本存档**；语音 mix / 企微+短信见 TODO。见 [`plan.md`](plan.md)。
 
@@ -420,6 +421,9 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 | `daemon/ai_call/uds.go` / `pcmutil.go` | APCM、重采样 |
 | `daemon/ai_call/llm/` | DeepSeek、CallSession、挂断存档 |
 | `daemon/ai_call/stt/sherpa.go` | SenseVoice CLI |
+| `daemon/nexus_callpolicy/` | 双卡来电策略（registry 检测 + Answer/Reject） |
+| `daemon/nexus_webui/` | 本机配置页 + SIM 只读发现 |
+| `daemon/nexuscfg/` | `config.json` 读写 / sims policy |
 | `magisk_modules/nexus_runtime/` | 开机自启 + `env.sh` |
 
 ---

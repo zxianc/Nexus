@@ -24,4 +24,4 @@
 
 ## 当前进度一句话
 
-**模块族：** `nexus_audio_hook` + **`nexus_runtime` / `nexus_models` 骨架**（[`magisk_modules/README.md`](../magisk_modules/README.md)）。填入 bin/模型后打包即可装。
+**模块族：** `nexus_audio_hook` + **`nexus_runtime` / `nexus_models`**（[`magisk_modules/README.md`](../magisk_modules/README.md)）。含本机 WebUI 与 **双卡来电策略** `nexus_callpolicy`（`human` / `ai` / `reject`）。

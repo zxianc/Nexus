@@ -10,7 +10,7 @@
 ## 设备路径
 
 ```text
-/data/adb/modules/nexus_runtime/bin/{ai_call,nexus_engine,nexus_webui}
+/data/adb/modules/nexus_runtime/bin/{ai_call,nexus_engine,nexus_webui,nexus_callpolicy}
 /data/adb/modules/nexus_runtime/lib/libonnxruntime.so
 /data/adb/modules/nexus_runtime/scripts/restart_callstack.sh
 /data/adb/modules/nexus_models/models/sense-voice/
@@ -27,13 +27,15 @@
 开机后在手机 Chrome 打开：**http://127.0.0.1:8787**（仅本机）。
 
 - 改 LLM / Key / 打断 / 路径等 → 保存后自动重启 `ai_call`（必要时 `nexus_engine`）
-- **不**杀 `nexus_webui`
-- 设计见 `docs/superpowers/specs/2026-07-19-nexus-webui-design.md`
+- **不**杀 `nexus_webui` / `nexus_callpolicy`（双卡策略热读 config）
+- WebUI 含「双卡策略」：`human` / `ai` / `reject`（默认双卡人工）
+- 设计见 `docs/superpowers/specs/2026-07-19-nexus-webui-design.md`、`2026-07-19-callpolicy-sims-design.md`
 
 打包前：
 
 ```bat
 copy daemon\nexus_webui\nexus_webui_arm64 magisk_modules\nexus_runtime\bin\nexus_webui
+copy daemon\nexus_callpolicy\nexus_callpolicy_arm64 magisk_modules\nexus_runtime\bin\nexus_callpolicy
 ```
 
 ## 打包前填充资产（勿提交大文件）
@@ -70,7 +72,22 @@ build.bat
 adb shell 'su -c "printf \"%s\" \"sk-...\" >/data/adb/nexus/secrets/deepseek.key; chmod 600 /data/adb/nexus/secrets/deepseek.key"'
 ```
 
-日志：`/data/vendor/ai_hook/nexus_runtime.log`、`ai_call.log`、`nexus_engine.log`。
+日志：`/data/vendor/ai_hook/nexus_runtime.log`、`ai_call.log`、`nexus_engine.log`、`nexus_webui.log`、`nexus_callpolicy.log`。
+
+## 双卡来电策略
+
+进程 **`nexus_callpolicy`**（开机由 `service.sh` 拉起；**不被** `restart_callstack.sh` 杀掉）。
+
+| 策略 | 行为 |
+|------|------|
+| `human`（默认） | 响铃，等人工 |
+| `ai` | 自动接通 → 现有 HAL / `ai_call` 闭环 |
+| `reject` | 自动拒接 |
+
+- WebUI「双卡策略」：运营商/号码从系统读取（只读）；仅改 policy
+- 检测：`telephony.registry` 的 `Phone Id` + `mCallState=1`
+- 接听优先 `KEYCODE_HEADSETHOOK`；拒接 `telecom endCall` / `KEYCODE_ENDCALL`；均校验通话状态
+- 设计：`docs/superpowers/specs/2026-07-19-callpolicy-sims-design.md`
 
 ## `env.sh` / `config.json`
 
@@ -84,7 +101,7 @@ adb shell 'su -c "printf \"%s\" \"sk-...\" >/data/adb/nexus/secrets/deepseek.key
 | （写在 json） | `llm.api_key` | 空 | API Key |
 | `STT_LANG` | `stt.lang` | `auto` | 识别语言 |
 | `TX_BEEP_PREFIX` | `tts.beep_prefix` | `0` | TTS 前哔声 |
-| （或 `-tts-sid`） | `tts.sid` | `0` | VITS 说话人；**zh-ll 为 0～4** |
+| （写在 json） | `sims[].policy` | `human` | 双卡来电：`human` / `ai` / `reject` |
 
 `env.sh` 在何处生效：被 **`service.sh`**（开机/手动）与 **`scripts/restart_callstack.sh`**（WebUI 保存重启）`source`；首装由 `customize.sh` 从 `env.default.sh` 复制。已 export 的变量会盖过 json，改 WebUI 后若异常请检查 `env.sh`。
 

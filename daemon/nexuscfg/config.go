@@ -17,6 +17,22 @@ type Config struct {
 	STT    STT   `json:"stt"`
 	TTS    TTS   `json:"tts"`
 	Paths  Paths `json:"paths"`
+	Sims   []Sim `json:"sims"`
+}
+
+// Policy values for per-SIM incoming call handling.
+const (
+	PolicyHuman  = "human"
+	PolicyAI     = "ai"
+	PolicyReject = "reject"
+)
+
+type Sim struct {
+	Slot    int    `json:"slot"`
+	Label   string `json:"label"`   // from device (carrier/display); UI read-only
+	Carrier string `json:"carrier"` // from device; UI read-only
+	Number  string `json:"number"`  // from device; UI read-only
+	Policy  string `json:"policy"`  // human | ai | reject — only editable field
 }
 
 type WebUI struct {
@@ -66,6 +82,81 @@ func Default() Config {
 			STTModel:   "/data/adb/modules/nexus_models/models/sense-voice",
 			TTSModel:   "/data/adb/modules/nexus_models/models/vits-zh-ll",
 		},
+		Sims: DefaultSims(),
+	}
+}
+
+func DefaultSims() []Sim {
+	return []Sim{
+		{Slot: 0, Label: "卡1", Policy: PolicyHuman},
+		{Slot: 1, Label: "卡2", Policy: PolicyHuman},
+	}
+}
+
+// NormalizePolicy returns a valid policy; unknown/empty → human.
+func NormalizePolicy(p string) string {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case PolicyAI:
+		return PolicyAI
+	case PolicyReject:
+		return PolicyReject
+	default:
+		return PolicyHuman
+	}
+}
+
+// PolicyForSlot returns policy for slot; missing → human.
+func PolicyForSlot(cfg Config, slot int) string {
+	for _, s := range cfg.Sims {
+		if s.Slot == slot {
+			return NormalizePolicy(s.Policy)
+		}
+	}
+	return PolicyHuman
+}
+
+// MergeDeviceSims overlays device-discovered identity onto cfg.Sims (keeps policy).
+func MergeDeviceSims(cfg *Config, device []Sim) {
+	ensureSims(cfg)
+	if len(device) == 0 {
+		return
+	}
+	bySlot := map[int]Sim{}
+	for _, d := range device {
+		bySlot[d.Slot] = d
+	}
+	seen := map[int]bool{}
+	for i := range cfg.Sims {
+		slot := cfg.Sims[i].Slot
+		d, ok := bySlot[slot]
+		if !ok {
+			continue
+		}
+		seen[slot] = true
+		pol := cfg.Sims[i].Policy
+		cfg.Sims[i] = d
+		cfg.Sims[i].Policy = NormalizePolicy(pol)
+	}
+	for slot, d := range bySlot {
+		if seen[slot] {
+			continue
+		}
+		d.Policy = PolicyHuman
+		cfg.Sims = append(cfg.Sims, d)
+	}
+	ensureSims(cfg)
+}
+
+func ensureSims(cfg *Config) {
+	if len(cfg.Sims) == 0 {
+		cfg.Sims = DefaultSims()
+		return
+	}
+	for i := range cfg.Sims {
+		cfg.Sims[i].Policy = NormalizePolicy(cfg.Sims[i].Policy)
+		if cfg.Sims[i].Label == "" {
+			cfg.Sims[i].Label = fmt.Sprintf("卡%d", cfg.Sims[i].Slot+1)
+		}
 	}
 }
 
@@ -81,6 +172,7 @@ func Load(path string) (Config, error) {
 	if cfg.Schema == 0 {
 		cfg.Schema = 1
 	}
+	ensureSims(&cfg)
 	return cfg, nil
 }
 
@@ -99,6 +191,7 @@ func SaveAtomic(path string, cfg Config) error {
 	if cfg.Schema == 0 {
 		cfg.Schema = 1
 	}
+	ensureSims(&cfg)
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -160,7 +253,26 @@ func Redact(cfg Config) map[string]any {
 			"stt_model":   cfg.Paths.STTModel,
 			"tts_model":   cfg.Paths.TTSModel,
 		},
+		"sims": redactSims(cfg.Sims),
 	}
+}
+
+func redactSims(sims []Sim) []map[string]any {
+	ensure := sims
+	if len(ensure) == 0 {
+		ensure = DefaultSims()
+	}
+	out := make([]map[string]any, 0, len(ensure))
+	for _, s := range ensure {
+		out = append(out, map[string]any{
+			"slot":    s.Slot,
+			"label":   s.Label,
+			"carrier": s.Carrier,
+			"number":  s.Number,
+			"policy":  NormalizePolicy(s.Policy),
+		})
+	}
+	return out
 }
 
 type putBody struct {
@@ -190,6 +302,7 @@ type putBody struct {
 		STTModel   *string `json:"stt_model"`
 		TTSModel   *string `json:"tts_model"`
 	} `json:"paths"`
+	Sims []Sim `json:"sims"`
 }
 
 func ApplyPUT(current Config, body []byte) (Config, bool, error) {
@@ -255,6 +368,25 @@ func ApplyPUT(current Config, body []byte) (Config, bool, error) {
 		if p.Paths.TTSModel != nil {
 			next.Paths.TTSModel = *p.Paths.TTSModel
 		}
+	}
+	if p.Sims != nil {
+		ensureSims(&next)
+		bySlot := map[int]*Sim{}
+		for i := range next.Sims {
+			bySlot[next.Sims[i].Slot] = &next.Sims[i]
+		}
+		for _, in := range p.Sims {
+			if s, ok := bySlot[in.Slot]; ok {
+				s.Policy = NormalizePolicy(in.Policy)
+				continue
+			}
+			next.Sims = append(next.Sims, Sim{
+				Slot:   in.Slot,
+				Label:  fmt.Sprintf("卡%d", in.Slot+1),
+				Policy: NormalizePolicy(in.Policy),
+			})
+		}
+		ensureSims(&next)
 	}
 	return next, NeedsEngineRestart(current, next), nil
 }
