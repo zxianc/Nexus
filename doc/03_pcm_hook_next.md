@@ -53,7 +53,7 @@
 
 - 路径：MultiMedia9 + **pcm OUT d23**；格式 **48k mono s16le**；默认静音保活
 - **模型：** `sherpa-onnx-vits-zh-ll`；`ai_call -say` → `tx_inject.pcm`；播完 unlink（每句重写）
-- **听验：** 对面女声「你好能听到嘛」；音色=模型/`-tts-sid`，换模型可换声
+- **听验：** 对面女声「你好能听到嘛」；音色=`-tts-sid` / `tts.sid`（**vits-zh-ll：0～4**）；换模型可换声库
 
 ### ✅ STT → LLM → TTS 闭环 — 已完成（2026-07-19）
 

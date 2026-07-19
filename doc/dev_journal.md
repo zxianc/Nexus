@@ -489,6 +489,12 @@
 - **代码：** `daemon/nexuscfg`、`daemon/nexus_webui`；`ai_call` 优先读 config.json。
 - **设计/计划：** `docs/superpowers/specs/2026-07-19-nexus-webui-design.md`、`docs/superpowers/plans/2026-07-19-nexus-webui.md`。
 
+## 2026-07-19 — 日志时区 + VITS sid 说明
+
+- **时区：** Go CGO=0 无系统 zoneinfo → 日志曾为 UTC；已 `import _ "time/tzdata"` + `service.sh`/`restart_callstack.sh` export `TZ`（跟 `persist.sys.timezone`）。
+- **音色：** 现行 `vits-zh-ll` 为 **5 说话人，`sid` 0～4**（见 `magisk_modules/nexus_models/models/vits-zh-ll/README.md`）。
+- **env.sh：** 仅被 `service.sh` / `restart_callstack.sh` source；已 export 会盖过 config.json。
+
 <!-- 新条目模板（复制到文末填写）：
 
 ## YYYY-MM-DD — 标题

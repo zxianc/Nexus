@@ -12,6 +12,10 @@ ELOG=/data/vendor/ai_hook/nexus_engine.log
 [ -f "$NEXUS/env.sh" ] && . "$NEXUS/env.sh"
 [ -f "$NEXUS/run/callstack.env" ] && . "$NEXUS/run/callstack.env"
 
+# Go CGO=0 has no system zoneinfo; pair with import _ "time/tzdata".
+export TZ="${TZ:-$(getprop persist.sys.timezone 2>/dev/null)}"
+[ -n "$TZ" ] || export TZ=Asia/Shanghai
+
 BIN="$MODDIR/bin"
 LIB="$MODDIR/lib"
 AI_CALL="${AI_CALL_BIN:-$BIN/ai_call}"

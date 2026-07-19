@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	_ "time/tzdata"
+
 	"nexus.nexuscfg"
 )
 

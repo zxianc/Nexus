@@ -194,7 +194,8 @@ adb shell "su -c 'LD_LIBRARY_PATH=/data/local/tmp/nexus_stt /data/local/tmp/nexu
 
 ```powershell
 # daemon/ai_call/scripts/build_sherpa_tts_api28.ps1
-# 需 SHERRPA_ONNX_ENABLE_TTS=ON；复用同目录 ORT 1.27.0
+# 需 SHERPA_ONNX_ENABLE_TTS=ON；复用同目录 ORT 1.27.0
+# 模型 sherpa-onnx-vits-zh-ll：5 说话人，--sid=0..4
 ```
 
 **踩坑：** FetchContent 拉 `piper-phonemize-….zip` 易断。把 zip 放到  

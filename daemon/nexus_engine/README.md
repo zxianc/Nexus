@@ -70,6 +70,8 @@ nexus_engine \
 {"id":3,"op":"tts","text":"你好","wav":"/path/out.wav","sid":0}
 ```
 
+`sid`：当前 `vits-zh-ll` 合法 **0～4**（5 说话人）。
+
 | `op` | 输入 | 成功时主要字段 |
 |------|------|----------------|
 | `ping` | — | `ok=true` |

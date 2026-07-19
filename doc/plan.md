@@ -70,7 +70,7 @@
 | TX 注入 | incall-music uplink（1.E） | 对面听见 TTS |
 | SELinux | `sepolicy.rule`：execmem + `vendor_data_file` + UDS | Magisk 语法无冒号、不用 `self` |
 | STT | **本地** sherpa-onnx SenseVoice（`ai_call`） | mock 可验管线 |
-| TTS | **本地 VITS**（`vits-zh-ll` ✅） | 经 1.E `tx_inject.pcm`；换模型/`sid` 换声 |
+| TTS | **本地 VITS**（`vits-zh-ll` ✅） | 经 1.E；`sid` **0～4**（5 说话人）；换模型可换库 |
 | LLM | **DeepSeek 云端**（`-llm` 流式切句 + 通内 session） | 默认 `deepseek-v4-flash`；打断见 `LLM_BARGE_IN`（默认关） |
 | 企微 / 短信 | **TODO 捆绑后续** | 先落盘；推送与短信一起做 |
 
@@ -108,7 +108,7 @@ HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == 
 
 - 注入点 + **按需 `tx_inject.pcm`**（48k mono）；播完 unlink，**每句需重新写入**
 - `sherpa-onnx-offline-tts` + **VITS `sherpa-onnx-vits-zh-ll`**；`ai_call -say` → TX
-- 对面听到女声；音色由模型/`-tts-sid` 决定，换模型可换声
+- 对面听到女声；音色由 `-tts-sid` / `tts.sid` 选择（**zh-ll：0～4**）；换模型可换声库
 - 软件合成存档：未做；**DeepSeek 流式闭环：通话听验 ✅**（含通内上下文）
 
 #### 1.G DeepSeek 流式 + 通内上下文 — ✅（2026-07-19）

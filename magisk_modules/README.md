@@ -84,8 +84,13 @@ adb shell 'su -c "printf \"%s\" \"sk-...\" >/data/adb/nexus/secrets/deepseek.key
 | （写在 json） | `llm.api_key` | 空 | API Key |
 | `STT_LANG` | `stt.lang` | `auto` | 识别语言 |
 | `TX_BEEP_PREFIX` | `tts.beep_prefix` | `0` | TTS 前哔声 |
+| （或 `-tts-sid`） | `tts.sid` | `0` | VITS 说话人；**zh-ll 为 0～4** |
+
+`env.sh` 在何处生效：被 **`service.sh`**（开机/手动）与 **`scripts/restart_callstack.sh`**（WebUI 保存重启）`source`；首装由 `customize.sh` 从 `env.default.sh` 复制。已 export 的变量会盖过 json，改 WebUI 后若异常请检查 `env.sh`。
 
 改 WebUI 或 json 后服务会按规则重启；改端口需再起 `nexus_webui`（或重跑 `service.sh`）。
+
+日志时区：脚本 export `TZ`（跟系统时区）；Go 需嵌入 `tzdata`（已处理）。
 
 ## 配置 UI
 

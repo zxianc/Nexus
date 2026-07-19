@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "time/tzdata"
+
 	"nexus.ai_call/engine"
 	"nexus.ai_call/llm"
 	"nexus.ai_call/stt"
