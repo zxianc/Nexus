@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexus 设置</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>Nexus</h1>
+    <p class="sub">本机配置 · 127.0.0.1</p>
+  </header>
+
+  <section id="status">
+    <h2>状态</h2>
+    <div id="proc" class="procs"></div>
+    <div class="row">
+      <button type="button" id="btnRefresh">刷新</button>
+      <button type="button" id="btnRestart">重启服务</button>
+    </div>
+    <p id="toast" class="toast" hidden></p>
+  </section>
+
+  <section id="settings">
+    <h2>设置</h2>
+    <form id="cfgForm">
+      <fieldset>
+        <legend>LLM</legend>
+        <label><input type="checkbox" id="llm_enabled" /> 启用</label>
+        <label>模型 <input id="llm_model" /></label>
+        <label>API Key <input id="llm_api_key" type="password" autocomplete="off" placeholder="留空=不改" /></label>
+        <label><input type="checkbox" id="clear_api_key" /> 清除 Key</label>
+        <label><input type="checkbox" id="llm_barge_in" /> 播放中打断</label>
+        <label>历史条数 <input id="llm_max_msgs" type="number" min="1" /></label>
+        <label>System <textarea id="llm_system" rows="3"></textarea></label>
+      </fieldset>
+      <fieldset>
+        <legend>STT / TTS</legend>
+        <label>语言 <input id="stt_lang" /></label>
+        <label><input type="checkbox" id="tts_beep" /> TTS 前哔声</label>
+        <label>Speaker id <input id="tts_sid" type="number" /></label>
+      </fieldset>
+      <fieldset>
+        <legend>路径</legend>
+        <label>engine sock <input id="path_engine_sock" /></label>
+        <label>存档目录 <input id="path_archive" /></label>
+        <label>STT 模型 <input id="path_stt" /></label>
+        <label>TTS 模型 <input id="path_tts" /></label>
+        <label>WebUI 端口 <input id="webui_port" type="number" /></label>
+      </fieldset>
+      <button type="submit">保存并重启</button>
+    </form>
+  </section>
+
+  <section id="logs">
+    <h2>日志</h2>
+    <div class="row">
+      <select id="logName">
+        <option value="ai_call">ai_call</option>
+        <option value="nexus_engine">nexus_engine</option>
+        <option value="nexus_runtime">nexus_runtime</option>
+        <option value="nexus_webui">nexus_webui</option>
+      </select>
+      <input id="logLines" type="number" value="80" min="1" max="500" />
+      <button type="button" id="btnLogs">加载</button>
+    </div>
+    <pre id="logOut"></pre>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

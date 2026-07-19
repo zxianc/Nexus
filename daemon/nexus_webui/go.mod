@@ -1,4 +1,4 @@
-module nexus.ai_call
+module nexus.nexus_webui
 
 go 1.26.5
 

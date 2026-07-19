@@ -19,6 +19,7 @@ import (
 	"nexus.ai_call/llm"
 	"nexus.ai_call/stt"
 	"nexus.ai_call/tts"
+	"nexus.nexuscfg"
 )
 
 const (
@@ -122,6 +123,52 @@ func main() {
 	archiveDir := flag.String("archive-dir", envOr("CALL_ARCHIVE_DIR", defaultArchiveDir), "end-of-call text archive dir")
 	llmPing := flag.Bool("llm-ping", false, "one-shot DeepSeek ping then exit")
 	flag.Parse()
+
+	// Prefer /data/adb/nexus/config.json beneath explicit flags / env.
+	if fo, ok := loadNexusFileOpts(envOr("NEXUS_CONFIG", nexuscfg.DefaultPath)); ok {
+		if strings.TrimSpace(*llmKey) == "" && fo.APIKey != "" {
+			*llmKey = fo.APIKey
+		}
+		if !envSet("DEEPSEEK_MODEL") && fo.Model != "" {
+			*llmModel = fo.Model
+		}
+		if !envSet("LLM_SYSTEM") && fo.System != "" {
+			*llmSystem = fo.System
+		}
+		if !envSet("LLM_MAX_MSGS") && fo.MaxMsgs > 0 {
+			*llmMaxMsgs = fo.MaxMsgs
+		}
+		if !envSet("LLM_BARGE_IN") {
+			*llmBargeIn = fo.BargeIn
+		}
+		if !envSet("STT_LANG") && fo.Lang != "" {
+			*lang = fo.Lang
+		}
+		if !envSet("CALL_ARCHIVE_DIR") && fo.Archive != "" {
+			*archiveDir = fo.Archive
+		}
+		if !envSet("TX_BEEP_PREFIX") {
+			// speakTX reads env at call time; export for consistency
+			if fo.Beep {
+				_ = os.Setenv("TX_BEEP_PREFIX", "1")
+			}
+		}
+		if !envSet("ENGINE_SOCK") && fo.EngineSock != "" {
+			*engineSock = fo.EngineSock
+		}
+		if !envSet("STT_MODEL_DIR") && fo.STTModel != "" {
+			*modelDir = fo.STTModel
+		}
+		if !envSet("TTS_MODEL_DIR") && fo.TTSModel != "" {
+			*ttsModel = fo.TTSModel
+		}
+		if fo.Sid != 0 {
+			*ttsSid = fo.Sid
+		}
+		if !envSet("LLM") && !*useLLM {
+			*useLLM = fo.LLMEnabled
+		}
+	}
 
 	ttsCfg := ttsOut{
 		Bin: *ttsBin, Model: *ttsModel, TX: *txPath, Rate: *txRate, Sid: *ttsSid,

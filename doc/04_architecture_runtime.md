@@ -402,6 +402,7 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 | `mix(DL, TTS)` 语音存档 | TODO 延期（时间轴对齐） |
 | 企微推送 + 短信转发 | TODO 捆绑后续 |
 | Magisk 开机自启 `ai_call` + `nexus_engine` | ✅ `nexus_runtime` `service.sh` |
+| 本机配置 WebUI | ✅ `nexus_webui` → `http://127.0.0.1:8787` |
 
 目标音频方案（全 AI）：`DL → STT → LLM → TTS → 1.E 注入`；**现行文本存档**；语音 mix / 企微+短信见 TODO。见 [`plan.md`](plan.md)。
 

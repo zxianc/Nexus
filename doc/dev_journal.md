@@ -482,6 +482,13 @@
 - **开关：** `LLM_BARGE_IN` / `-llm-barge-in`，**默认关**。开：播报中插话打断；关：播报中也只排队。设备改 `/data/adb/nexus/env.sh` 后重启 `service.sh`。
 - **相关：** `daemon/ai_call/main.go`、`txinject.go`；说明见 `daemon/ai_call/README.md`、`magisk_modules/README.md`。
 
+## 2026-07-19 — 本机配置 WebUI（nexus_webui）
+
+- **形态：** `nexus_runtime` 独立进程，仅 `127.0.0.1:8787`；页面改 `/data/adb/nexus/config.json`（含 API Key）。
+- **保存：** 写盘后跑 `scripts/restart_callstack.sh` 重启 engine/ai_call，**不杀** webui。
+- **代码：** `daemon/nexuscfg`、`daemon/nexus_webui`；`ai_call` 优先读 config.json。
+- **设计/计划：** `docs/superpowers/specs/2026-07-19-nexus-webui-design.md`、`docs/superpowers/plans/2026-07-19-nexus-webui.md`。
+
 <!-- 新条目模板（复制到文末填写）：
 
 ## YYYY-MM-DD — 标题

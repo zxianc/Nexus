@@ -22,7 +22,9 @@ daemon/pcm_recv/pcm_recv.exe
 # Magisk business modules: do not commit large binaries / weights
 magisk_modules/**/bin/ai_call
 magisk_modules/**/bin/nexus_engine
+magisk_modules/**/bin/nexus_webui
 magisk_modules/**/bin/sherpa-onnx-*
+daemon/**/nexus_webui_arm64
 magisk_modules/**/lib/*.so
 magisk_modules/**/models/sense-voice/**
 magisk_modules/**/models/vits-zh-ll/**
@@ -49,3 +51,6 @@ Thumbs.db
 *.key
 deepseek.key
 *.jks
+
+# Agent scratch (SDD ledgers / briefs)
+.superpowers/

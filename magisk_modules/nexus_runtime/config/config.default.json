@@ -1,22 +1,26 @@
 {
   "schema": 1,
+  "webui": { "port": 8787 },
   "llm": {
     "enabled": true,
     "model": "deepseek-v4-flash",
-    "key_file": "/data/adb/nexus/secrets/deepseek.key"
+    "api_key": "",
+    "barge_in": false,
+    "max_msgs": 24,
+    "system_prompt": ""
   },
   "stt": {
     "backend": "engine",
     "lang": "auto"
   },
   "tts": {
-    "beep_prefix": false
+    "beep_prefix": false,
+    "sid": 0
   },
   "paths": {
     "engine_sock": "/data/adb/nexus/run/engine.sock",
     "archive_dir": "/data/vendor/ai_hook/calls",
     "stt_model": "/data/adb/modules/nexus_models/models/sense-voice",
     "tts_model": "/data/adb/modules/nexus_models/models/vits-zh-ll"
-  },
-  "notes": "config.json is reserved for a future settings UI; boot currently uses env.sh"
+  }
 }

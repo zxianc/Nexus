@@ -120,6 +120,7 @@ nohup /data/local/tmp/ai_call -backend engine -llm >>/data/vendor/ai_hook/ai_cal
 **上下文：** 同一通电话内累积对话历史发给模型；挂断/新 stream 清空；默认最多 24 条（`LLM_MAX_MSGS`）。
 **存档：** 挂断后写 `/data/vendor/ai_hook/calls/call_*.txt`（摘要 + 全文）。企微/短信推送后续再做。
 **打断：** 默认关（`LLM_BARGE_IN=0` / `-llm-barge-in=false`）。开启后仅 TTS 播放中可打断（短静音切 TX 并重开）；思考中或开关关闭时新真句只排队为下一轮。启动前默认防抖 600ms（`LLM_REPLY_DEBOUNCE_MS`）。
+**配置：** 优先读 `/data/adb/nexus/config.json`（`NEXUS_CONFIG`）；本机 WebUI `http://127.0.0.1:8787`。flag/env 仍可覆盖。
 
 ## Flag / 环境变量
 

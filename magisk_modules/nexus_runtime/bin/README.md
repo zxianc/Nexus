@@ -3,6 +3,7 @@
 # 必需（现行 engine 路径）:
 #   ai_call
 #   nexus_engine
+#   nexus_webui                  # 本机配置页 http://127.0.0.1:8787
 #
 # 必需（放在 ../lib/）:
 #   libonnxruntime.so
@@ -16,5 +17,6 @@
 # 真机调试树对应关系:
 #   /data/local/tmp/ai_call                      → bin/ai_call
 #   /data/local/tmp/nexus_stt/nexus_engine       → bin/nexus_engine
+#   daemon/nexus_webui/nexus_webui_arm64         → bin/nexus_webui
 #   /data/local/tmp/nexus_stt/libonnxruntime.so → lib/libonnxruntime.so
 #   /data/local/tmp/nexus_stt/sherpa-onnx-*     → bin/sherpa-onnx-*

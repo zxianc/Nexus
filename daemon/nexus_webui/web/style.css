@@ -1,0 +1,71 @@
+:root {
+  --bg: #0f1419;
+  --card: #1a222c;
+  --text: #e7ecf1;
+  --muted: #8b9aab;
+  --accent: #3d9cf0;
+  --ok: #3ecf8e;
+  --bad: #e85d5d;
+  --border: #2a3542;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 1rem;
+  line-height: 1.45;
+}
+header { margin-bottom: 1.25rem; }
+h1 { margin: 0; font-size: 1.5rem; }
+.sub { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.9rem; }
+section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+h2 { margin: 0 0 0.75rem; font-size: 1.1rem; }
+.procs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.pill {
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+}
+.pill.on { border-color: var(--ok); color: var(--ok); }
+.pill.off { border-color: var(--bad); color: var(--bad); }
+.row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+label { display: block; margin: 0.45rem 0; font-size: 0.9rem; }
+input[type="text"], input:not([type]), input[type="password"], input[type="number"], textarea, select {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #0c1015;
+  color: var(--text);
+}
+button {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.55rem 0.9rem;
+  font-weight: 600;
+}
+fieldset { border: 1px solid var(--border); border-radius: 8px; margin: 0 0 0.75rem; }
+.toast { color: var(--ok); margin-top: 0.5rem; }
+.toast.err { color: var(--bad); }
+pre {
+  background: #0c1015;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  overflow: auto;
+  max-height: 40vh;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+}

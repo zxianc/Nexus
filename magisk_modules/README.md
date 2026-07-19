@@ -10,14 +10,30 @@
 ## 设备路径
 
 ```text
-/data/adb/modules/nexus_runtime/bin/{ai_call,nexus_engine}
+/data/adb/modules/nexus_runtime/bin/{ai_call,nexus_engine,nexus_webui}
 /data/adb/modules/nexus_runtime/lib/libonnxruntime.so
+/data/adb/modules/nexus_runtime/scripts/restart_callstack.sh
 /data/adb/modules/nexus_models/models/sense-voice/
 /data/adb/modules/nexus_models/models/vits-zh-ll/
-/data/adb/nexus/env.sh                 # 可写配置（首装从默认复制）
-/data/adb/nexus/secrets/deepseek.key   # API Key（勿进 git）
+/data/adb/nexus/config.json             # 配置真源（含 API Key，chmod 600）
+/data/adb/nexus/env.sh                 # 可选覆盖（调试）
+/data/adb/nexus/secrets/deepseek.key   # 遗留；可迁移进 config.json
 /data/adb/nexus/run/engine.sock
-/data/vendor/ai_hook/calls/            # 通话文本存档（沿用）
+/data/vendor/ai_hook/calls/            # 通话文本存档
+```
+
+## 本机 WebUI
+
+开机后在手机 Chrome 打开：**http://127.0.0.1:8787**（仅本机）。
+
+- 改 LLM / Key / 打断 / 路径等 → 保存后自动重启 `ai_call`（必要时 `nexus_engine`）
+- **不**杀 `nexus_webui`
+- 设计见 `docs/superpowers/specs/2026-07-19-nexus-webui-design.md`
+
+打包前：
+
+```bat
+copy daemon\nexus_webui\nexus_webui_arm64 magisk_modules\nexus_runtime\bin\nexus_webui
 ```
 
 ## 打包前填充资产（勿提交大文件）
@@ -56,21 +72,21 @@ adb shell 'su -c "printf \"%s\" \"sk-...\" >/data/adb/nexus/secrets/deepseek.key
 
 日志：`/data/vendor/ai_hook/nexus_runtime.log`、`ai_call.log`、`nexus_engine.log`。
 
-## `env.sh` 常用项
+## `env.sh` / `config.json`
 
-首装从 `config/env.default.sh` 复制到 `/data/adb/nexus/env.sh`，之后只改后者：
+**真源：** `/data/adb/nexus/config.json`（WebUI 读写）。`env.sh` 仅作开机/调试覆盖。
 
-| 变量 | 默认 | 含义 |
-|------|------|------|
-| `LLM` | `1` | 开 DeepSeek 闭环 |
-| `LLM_BARGE_IN` | `0` | `1`=TTS 播放中允许语音打断；`0`=只排队下一轮 |
-| `LLM_REPLY_DEBOUNCE_MS` | `600` | 开答前防抖（毫秒） |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 模型 id |
-| `DEEPSEEK_KEY_FILE` | `…/secrets/deepseek.key` | API Key 路径 |
-| `TX_BEEP_PREFIX` | `0` | TTS 前诊断哔声 |
+| 变量（env 覆盖） | json 字段 | 默认 | 含义 |
+|------|------|------|------|
+| `LLM` | `llm.enabled` | `1` | 开 DeepSeek 闭环 |
+| `LLM_BARGE_IN` | `llm.barge_in` | `0` | TTS 播放中打断 |
+| `DEEPSEEK_MODEL` | `llm.model` | `deepseek-v4-flash` | 模型 |
+| （写在 json） | `llm.api_key` | 空 | API Key |
+| `STT_LANG` | `stt.lang` | `auto` | 识别语言 |
+| `TX_BEEP_PREFIX` | `tts.beep_prefix` | `0` | TTS 前哔声 |
 
-改完：`su -c 'sh /data/adb/modules/nexus_runtime/service.sh'`（或重启）。启动日志应含 `barge_in=true|false`。
+改 WebUI 或 json 后服务会按规则重启；改端口需再起 `nexus_webui`（或重跑 `service.sh`）。
 
 ## 配置 UI
 
-`config.json` 已预留；现行开机读 **`env.sh`**。设置 APK / WebUI 后续再做。
+现行：**本机 WebUI**（`nexus_webui`）。`config.json` 为真源。
