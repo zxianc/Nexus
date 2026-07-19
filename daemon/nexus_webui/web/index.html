@@ -73,6 +73,26 @@
         </div>
       </fieldset>
       <fieldset>
+        <legend>企微通知</legend>
+        <p class="hint">推荐内部群机器人 Webhook（无企业可信 IP）。改通知开关/Webhook 后热生效，不重启通话进程。</p>
+        <label><input type="checkbox" id="notify_enabled" /> 启用通知</label>
+        <label><input type="checkbox" id="notify_call" /> 通话挂断推送</label>
+        <label><input type="checkbox" id="notify_sms" /> 双卡短信转发</label>
+        <label>通道
+          <select id="notify_channel">
+            <option value="wecom_webhook">群机器人 Webhook</option>
+            <option value="wecom_external">外部联系人 / 应用消息（需可信 IP）</option>
+          </select>
+        </label>
+        <label>Webhook URL
+          <input id="notify_webhook" type="password" autocomplete="off" placeholder="留空=不改" />
+        </label>
+        <p class="sim-meta" id="notify_webhook_status">Webhook：未配置</p>
+        <label><input type="checkbox" id="clear_webhook" /> 清除 Webhook</label>
+        <label>短信轮询 ms <input id="notify_sms_poll" type="number" min="500" step="100" /></label>
+        <label>通话全文上限 <input id="notify_call_max" type="number" min="500" step="100" /></label>
+      </fieldset>
+      <fieldset>
         <legend>路径</legend>
         <label>engine sock <input id="path_engine_sock" /></label>
         <label>存档目录 <input id="path_archive" /></label>
@@ -80,7 +100,7 @@
         <label>TTS 模型 <input id="path_tts" /></label>
         <label>WebUI 端口 <input id="webui_port" type="number" /></label>
       </fieldset>
-      <button type="submit">保存并重启</button>
+      <button type="submit">保存</button>
     </form>
   </section>
 
@@ -93,6 +113,7 @@
         <option value="nexus_runtime">nexus_runtime</option>
         <option value="nexus_webui">nexus_webui</option>
         <option value="nexus_callpolicy">nexus_callpolicy</option>
+        <option value="nexus_notify">nexus_notify</option>
       </select>
       <input id="logLines" type="number" value="80" min="1" max="500" />
       <button type="button" id="btnLogs">加载</button>

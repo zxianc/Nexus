@@ -195,7 +195,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) statusMap() map[string]any {
-	names := []string{"ai_call", "nexus_engine", "nexus_webui", "nexus_callpolicy"}
+	names := []string{"ai_call", "nexus_engine", "nexus_webui", "nexus_callpolicy", "nexus_notify"}
 	out := map[string]any{}
 	look := s.LookupPID
 	if look == nil {
@@ -213,11 +213,12 @@ func (s *Server) statusMap() map[string]any {
 }
 
 var logFiles = map[string]string{
-	"ai_call":       "ai_call.log",
-	"nexus_engine":  "nexus_engine.log",
-	"nexus_runtime": "nexus_runtime.log",
-	"nexus_webui":   "nexus_webui.log",
+	"ai_call":          "ai_call.log",
+	"nexus_engine":     "nexus_engine.log",
+	"nexus_runtime":    "nexus_runtime.log",
+	"nexus_webui":      "nexus_webui.log",
 	"nexus_callpolicy": "nexus_callpolicy.log",
+	"nexus_notify":     "nexus_notify.log",
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {

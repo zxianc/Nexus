@@ -356,6 +356,7 @@ func redactNotify(n Notify) map[string]any {
 			"sender_set":          strings.TrimSpace(ensure.WeCom.Sender) != "",
 			"touser_set":          strings.TrimSpace(ensure.WeCom.ToUser) != "",
 			"webhook_url_set":     strings.TrimSpace(ensure.WeCom.WebhookURL) != "",
+			"webhook_url_hint":    webhookHint(ensure.WeCom.WebhookURL),
 		},
 		"sms": map[string]any{
 			"enabled": ensure.SMS.Enabled,
@@ -366,6 +367,25 @@ func redactNotify(n Notify) map[string]any {
 			"max_transcript_chars": ensure.Call.MaxTranscriptChars,
 		},
 	}
+}
+
+func webhookHint(u string) string {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return ""
+	}
+	// Show only key suffix so the page can confirm without exposing full URL.
+	if i := strings.LastIndex(u, "key="); i >= 0 {
+		k := u[i+4:]
+		if len(k) > 8 {
+			return "…" + k[len(k)-8:]
+		}
+		return k
+	}
+	if len(u) > 12 {
+		return "…" + u[len(u)-8:]
+	}
+	return u
 }
 
 func redactSims(sims []Sim) []map[string]any {
@@ -387,8 +407,9 @@ func redactSims(sims []Sim) []map[string]any {
 }
 
 type putBody struct {
-	ClearAPIKey *bool `json:"clear_api_key"`
-	WebUI       *struct {
+	ClearAPIKey     *bool `json:"clear_api_key"`
+	ClearWebhookURL *bool `json:"clear_webhook_url"`
+	WebUI           *struct {
 		Port *int `json:"port"`
 	} `json:"webui"`
 	LLM *struct {
@@ -415,8 +436,12 @@ type putBody struct {
 	} `json:"paths"`
 	Sims   []Sim `json:"sims"`
 	Notify *struct {
-		Enabled *bool `json:"enabled"`
-		SMS     *struct {
+		Enabled *bool   `json:"enabled"`
+		Channel *string `json:"channel"`
+		WeCom   *struct {
+			WebhookURL *string `json:"webhook_url"`
+		} `json:"wecom"`
+		SMS *struct {
 			Enabled *bool `json:"enabled"`
 			PollMs  *int  `json:"poll_ms"`
 		} `json:"sms"`
@@ -514,6 +539,15 @@ func ApplyPUT(current Config, body []byte) (Config, bool, error) {
 		if p.Notify.Enabled != nil {
 			next.Notify.Enabled = *p.Notify.Enabled
 		}
+		if p.Notify.Channel != nil {
+			next.Notify.Channel = strings.TrimSpace(*p.Notify.Channel)
+		}
+		if p.Notify.WeCom != nil && p.Notify.WeCom.WebhookURL != nil {
+			u := strings.TrimSpace(*p.Notify.WeCom.WebhookURL)
+			if u != "" {
+				next.Notify.WeCom.WebhookURL = u
+			}
+		}
 		if p.Notify.SMS != nil {
 			if p.Notify.SMS.Enabled != nil {
 				next.Notify.SMS.Enabled = *p.Notify.SMS.Enabled
@@ -531,6 +565,9 @@ func ApplyPUT(current Config, body []byte) (Config, bool, error) {
 			}
 		}
 		ensureNotify(&next)
+	}
+	if p.ClearWebhookURL != nil && *p.ClearWebhookURL {
+		next.Notify.WeCom.WebhookURL = ""
 	}
 	return next, NeedsEngineRestart(current, next), nil
 }

@@ -51,6 +51,24 @@ async function loadConfig() {
   const sims = c.sims || [];
   fillSim(0, sims.find((s) => s.slot === 0) || { label: "—", carrier: "—", number: "—", policy: "human" });
   fillSim(1, sims.find((s) => s.slot === 1) || { label: "—", carrier: "—", number: "—", policy: "human" });
+  const n = c.notify || {};
+  const nw = n.wecom || {};
+  const ns = n.sms || {};
+  const nc = n.call || {};
+  $("notify_enabled").checked = !!n.enabled;
+  $("notify_call").checked = nc.enabled !== false;
+  $("notify_sms").checked = ns.enabled !== false;
+  $("notify_channel").value = n.channel || "wecom_webhook";
+  $("notify_webhook").value = "";
+  $("notify_webhook").placeholder = nw.webhook_url_set
+    ? ("已配置 " + (nw.webhook_url_hint || ""))
+    : "粘贴群机器人 Webhook URL";
+  $("notify_webhook_status").textContent = nw.webhook_url_set
+    ? ("Webhook：已配置 " + (nw.webhook_url_hint || ""))
+    : "Webhook：未配置（推送不会发出）";
+  $("clear_webhook").checked = false;
+  $("notify_sms_poll").value = ns.poll_ms || 3000;
+  $("notify_call_max").value = nc.max_transcript_chars || 3500;
 }
 
 function fillSim(slot, s) {
@@ -85,10 +103,26 @@ function collectForm() {
       { slot: 0, policy: $("sim0_policy").value || "human" },
       { slot: 1, policy: $("sim1_policy").value || "human" },
     ],
+    notify: {
+      enabled: $("notify_enabled").checked,
+      channel: $("notify_channel").value || "wecom_webhook",
+      sms: {
+        enabled: $("notify_sms").checked,
+        poll_ms: Number($("notify_sms_poll").value || 3000),
+      },
+      call: {
+        enabled: $("notify_call").checked,
+        max_transcript_chars: Number($("notify_call_max").value || 3500),
+      },
+      wecom: {},
+    },
   };
   const key = $("llm_api_key").value.trim();
   if (key) body.llm.api_key = key;
   if ($("clear_api_key").checked) body.clear_api_key = true;
+  const wh = $("notify_webhook").value.trim();
+  if (wh) body.notify.wecom.webhook_url = wh;
+  if ($("clear_webhook").checked) body.clear_webhook_url = true;
   return body;
 }
 
@@ -107,6 +141,7 @@ async function saveConfig(ev) {
   }
   let msg = "已保存";
   if (j.restarted && j.restarted.length) msg += " · 已重启 " + j.restarted.join(",");
+  else msg += " · 通知/策略热生效";
   if (j.webui_restart_required) msg += " · 请重启 nexus_webui 使端口生效";
   toast(msg);
   await loadConfig();

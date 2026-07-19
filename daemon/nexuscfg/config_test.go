@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -95,6 +96,40 @@ func TestRedactHidesNotifySecret(t *testing.T) {
 	}
 	if w["secret_set"] != true || w["secret_hint"] != "efgh" {
 		t.Fatalf("wecom redact=%v", w)
+	}
+}
+
+func TestApplyPUTNotifyWebhook(t *testing.T) {
+	cur := Default()
+	next, _, err := ApplyPUT(cur, []byte(`{
+	  "notify":{
+	    "enabled":true,
+	    "channel":"wecom_webhook",
+	    "wecom":{"webhook_url":"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc123456789"},
+	    "sms":{"enabled":true,"poll_ms":5000},
+	    "call":{"enabled":true,"max_transcript_chars":2000}
+	  }
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !next.Notify.Enabled || next.Notify.Channel != "wecom_webhook" {
+		t.Fatalf("%+v", next.Notify)
+	}
+	if !strings.Contains(next.Notify.WeCom.WebhookURL, "key=abc") {
+		t.Fatal(next.Notify.WeCom.WebhookURL)
+	}
+	if next.Notify.SMS.PollMs != 5000 || next.Notify.Call.MaxTranscriptChars != 2000 {
+		t.Fatalf("%+v", next.Notify)
+	}
+	m := Redact(next)["notify"].(map[string]any)
+	w := m["wecom"].(map[string]any)
+	if w["webhook_url_set"] != true || w["webhook_url_hint"] == "" {
+		t.Fatalf("%v", w)
+	}
+	cleared, _, err := ApplyPUT(next, []byte(`{"clear_webhook_url":true}`))
+	if err != nil || cleared.Notify.WeCom.WebhookURL != "" {
+		t.Fatalf("clear: %v %+v", err, cleared.Notify.WeCom)
 	}
 }
 
