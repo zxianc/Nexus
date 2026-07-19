@@ -6,6 +6,9 @@ out/
 *.a
 *.apk
 *.zip
+daemon/**/*_arm64
+daemon/**/ai_call_arm64
+daemon/**/pcm_recv_arm64
 obj/
 libs/
 .externalNativeBuild/

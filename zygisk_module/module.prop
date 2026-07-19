@@ -1,6 +1,6 @@
 id=ai_audio_hook
 name=AI Audio Hook (Zygisk)
-version=v2.0
-versionCode=2
+version=v2.1
+versionCode=3
 author=Nexus
-description=Zygisk companion + ptrace inject libai_hook.so into audioserver
+description=ptrace inject libai_hook.so into audio HAL (32-bit) + UDS/DL incall-rec

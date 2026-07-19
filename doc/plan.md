@@ -1,6 +1,6 @@
 # 个人 AI 通信助理 (AI-Call-Agent) 技术落地白皮书
 
-**版本:** v1.7（阶段 1.C 完成：通话 PCM 已真机落盘听验）  
+**版本:** v1.14（模块 v2.1 重装自动注入通过；下一 1.E）  
 **日期:** 2026-07-19  
 **作者:** Developer  
 **目标环境:** 备用 Android 机（实装：OnePlus 8T / 骁龙 865 / LineageOS 23.2，Magisk + Zygisk）
@@ -9,6 +9,7 @@
 
 - 过程日志（**增量追加**）：[`doc/dev_journal.md`](dev_journal.md)
 - 下一里程碑清单：[`doc/03_pcm_hook_next.md`](03_pcm_hook_next.md)
+- **现行实现（数据流 / 线程）：** [`doc/04_architecture_runtime.md`](04_architecture_runtime.md)
 - 注入/Dobby 详记：[`doc/02_zygisk_inject_progress.md`](02_zygisk_inject_progress.md)
 - 旧 LD_PRELOAD 复盘：[`doc/Magisk_Injection_Log.md`](Magisk_Injection_Log.md)
 - 模块手册：[`zygisk_module/doc/README.md`](../zygisk_module/doc/README.md)
@@ -21,12 +22,36 @@
 
 核心设计：**底层劫持音频、端侧极致处理、云端高智商推理、微信无缝触达**。
 
-1. **AudioHook（C++ / Magisk Zygisk）**  
-   主线：**32-bit HAL** `/vendor/lib/libai_hook.so` → `android.hardware.audio.service`。  
-   **当前：** 通话 PCM 经 **incall-rec（MultiMedia9 + VOC_REC_UL/DL）** 已真机采集并听验通过（上下行混合单轨）。  
-   **说明：** 该点是**旁路录音**，不是 TX 注入；对面要听见需另开 incall-music uplink。
+### 1.1 接听模式（互斥）
 
-2. **AI 调度守护进程（Go / Termux）** — 下一步（1.D UDS）  
+| 模式 | 行为 |
+|------|------|
+| **全 AI 接听** | 对面只与 AI 对话；本机主人不插话 |
+| **全人接听** | 本机主人接听；不做实时 STT/TTS |
+
+不同时出现「AI 与人一起回复」。
+
+### 1.2 音频数据流（定稿）
+
+**全 AI 接听：**
+
+1. **HAL 只采 DL**（`INCALL_REC_DOWNLINK` + `VOC_REC_DL`）→ UDS → Go  
+2. **STT** 只吃 DL（对方语音）→ LLM → **TTS**  
+3. **TTS** 经 **incall-music uplink（1.E）** 注入，对面可听  
+4. **存档听效果：** Go 内 **软件混合 `DL + TTS PCM`** 落盘（不依赖第二路硬件 incall-rec）
+
+**全人接听（听验/存档）：** 可继续用已验证的 **UL+DL 混合** incall-rec 落盘。
+
+**不采用：** 硬件并行开两路 incall-rec（DL + 混合）——同一 MultiMedia9/会话上不可靠，不作为前置依赖。
+
+### 1.3 组件
+
+1. **AudioHook（C++ / Magisk Zygisk）**  
+   主线：**32-bit HAL** → `android.hardware.audio.service`。  
+   **已完成：** 混合听验 + UDS + **DL-only**。  
+   **下一步：** **1.E** TX。
+
+2. **AI 调度守护进程（Go）** — UDS + **本地 STT**（`ai_call` mock|sherpa + VAD 过滤，真机已出字）；TTS/DeepSeek 未接  
 3. **微信推送层（企业微信 API）** — 未开始  
 
 ---
@@ -38,9 +63,15 @@
 | Root / 模块 | Magisk 27+，**开启 Zygisk** | |
 | 进程注入 | companion + ptrace `dlopen`，`service.sh` 兜底 | HAL：`/vendor/lib/libai_hook.so`（32） |
 | Inline Hook | Dobby；HAL 侧 `dlsym` 取址（勿用 Dobby maps 解析） | `execmem`：audioserver + `hal_audio_default` |
-| 通话 PCM | incall-rec：`platform_set_incall_recording_session_id` + mixer `VOC_REC_*` + `pcm_read` d23 | 48kHz s16le；L≡R 混合 |
-| SELinux | `sepolicy.rule`：execmem + HAL 写 `vendor_data_file` | Magisk 语法无冒号、不用 `self` |
-| 守护进程 / STT / TTS / LLM / 企微 | 同前，待后续阶段 | |
+| 通话 PCM（AI） | incall-rec **DL-only** → UDS | STT 输入；勿用混合当唯一 STT 源 |
+| 通话 PCM（人/听验） | incall-rec **UL+DL**（已验证） | 48kHz s16le；L≡R 混合 |
+| 存档（AI 模式） | Go：**mix(DL, TTS)** | 完整「对方+AI」对话效果 |
+| TX 注入 | incall-music uplink（1.E） | 对面听见 TTS |
+| SELinux | `sepolicy.rule`：execmem + `vendor_data_file` + UDS | Magisk 语法无冒号、不用 `self` |
+| STT | **本地** sherpa-onnx SenseVoice（`ai_call`） | mock 可验管线 |
+| TTS | **本地**（待做） | 经 1.E 注入 |
+| LLM | **DeepSeek 云端**（待做） | 仅思考 |
+| 企微 | 待后续 | |
 
 ### 2.1 已废弃 / 已排除
 
@@ -48,12 +79,13 @@
 - `dlopen(/data/local/tmp/...)`；载荷放 `/system/lib`（linker namespace 拒绝）
 - audioserver datapath / MonoPipe 当通话 PCM（通话段 AF standby）
 - 仅 Hook tinyalsa / compress_voip（响铃有、通话中段无）
+- 硬件双路 incall-rec 并行作存档（不可靠，改软件合成）
 
 ---
 
 ## 3. 实施路线与当前进度
 
-### 阶段一：Native 劫持通话 PCM — **1.C 完成，进入 1.D**
+### 阶段一：Native 劫持通话 PCM — **1.C～1.D′、1.F、VAD(A) 完成；模块重装自动注入 ✅；下一 1.E**
 
 #### 1.A 注入投递 — ✅
 
@@ -61,31 +93,36 @@
 
 #### 1.C 定位通话 PCM 并拦截 — ✅（2026-07-19 听验通过）
 
-**结论路径：**
+混合路径已验证：`platform_set_incall_recording_session_id(vsid, UL+DL)` + `VOC_REC_UL/DL` + `pcm_open(0,23)` → `/data/vendor/ai_hook/ai_incall.pcm`。
 
-1. `voice_start_call` / `voice_start_usecase(41)` 确认 CS/IMS voice  
-2. `platform_set_incall_recording_session_id(vsid, UL+DL)`  
-3. mixer：`MultiMedia9 Mixer VOC_REC_UL/DL = 1`  
-4. `pcm_open(0, 23)` @ 48kHz stereo → `pcm_read` 全程  
-5. 落盘 `/data/vendor/ai_hook/ai_incall.pcm`（需 sepolicy 写 `vendor_data_file`）
+#### 1.D UDS ↔ Go — ✅（2026-07-19）
 
-**听验：** 用户确认 wav 为双向通话录音；L/R 样本 **100% 相同**（混合单轨复制成 stereo）。
+HAL `bind/listen` → Go `pcm_recv` `connect`；`APCM` + s16le；真机 `uds == dumped`。
 
-详见 [`03_pcm_hook_next.md`](03_pcm_hook_next.md)、[`dev_journal.md`](dev_journal.md)。
+#### 1.D′ DL-only 推流 — ✅（2026-07-19 听验通过）
 
-#### 1.D UDS ↔ Go — ⏳ 进行中
+`INCALL_REC_DOWNLINK` + `VOC_REC_DL`；UDS `kind=DL`；用户确认录音仅对方声。
 
-将 incall PCM 从 HAL 经 Unix Domain Socket 送给 Go 守护进程（STT 前级）。
-
-#### 1.E（并行可选）incall-music TX 注入 — 未开始
+#### 1.E incall-music TX 注入 — ⏳
 
 对面听见 TTS：`USECASE_INCALL_MUSIC_UPLINK` / `platform_start_incall_music_usecase`。
+
+#### 1.F Go：本地 STT — ✅（2026-07-19 sherpa 真机听验）
+
+- `daemon/ai_call`：DL → VAD → mock|sherpa SenseVoice → `stt.log`
+- 真机出字；VAD 方案 A 已过滤纯标点
+- 软件合成存档 / TTS / DeepSeek：未做
+
+#### 可移植 / 开机自恢复 — ✅（2026-07-19 模块 v2.1 重装）
+
+- Magisk 装 zip + 重启 → `service.sh` 自动 `inject32` HAL；maps + `pcm.sock` OK
+- `ai_call` **未**自启（仍手动）；Zygisk 缺 `armeabi-v7a.so` 仅告警、不影响主线
 
 ---
 
 ### 阶段二～四
 
-Go 守护进程、DeepSeek 流式、企微推送 — 均未开始（内容同前版规划）。
+完整 daemon、DeepSeek 流式、企微推送 — 均未开始（内容同前版规划）。
 
 ---
 
@@ -97,6 +134,8 @@ Go 守护进程、DeepSeek 流式、企微推送 — 均未开始（内容同前
 | HAL 落盘 EACCES | 写 `vendor_data_file` + live/模块 sepolicy；预建文件 |
 | PowerShell 解析 `$(pidof)` | 外层单引号包住 `adb shell '...'` |
 | 录音≠注入 | TX 需 incall-music，勿与 VOC_REC 混淆 |
+| TTS 回灌进 DL | 评估 AEC/门控；存档用软件 mix，STT 仍只信 DL |
+| Magisk `zygisk/armeabi-v7a.so` missing | 主线靠 `service.sh`；可后补 32-bit companion 或去掉 unused zygisk |
 
 ---
 
@@ -105,10 +144,12 @@ Go 守护进程、DeepSeek 流式、企微推送 — 均未开始（内容同前
 | 路径 | 说明 |
 |------|------|
 | `zygisk_module/` | **现行主线**（含 `audio_hook_hal.cpp`） |
+| `daemon/ai_call/` | **本地 STT 守护进程**（mock / sherpa SenseVoice） |
 | `magisk_module/` | 旧实验 + 内嵌 Dobby 源码 |
 | `doc/02_zygisk_inject_progress.md` | 注入操作详版 |
-| `doc/03_pcm_hook_next.md` | 1.C/1.D 里程碑 |
+| `doc/03_pcm_hook_next.md` | 当前里程碑 |
+| `doc/04_architecture_runtime.md` | 现行方案 / 数据流 / 线程模型 |
 
 ---
 
-*v1.7：1.C incall-rec 通话 PCM 真机听验通过；下一目标 1.D UDS。*
+*v1.14：模块 v2.1 重装自动注入通过；下一 1.E TX。*

@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 #include <atomic>
@@ -15,12 +16,18 @@
 
 #define PCM_SOCK_PATH "/data/vendor/ai_hook/pcm.sock"
 #define APCM_MAGIC 0x4D435041u /* 'APCM' LE */
+/* APCM hdr[12:14] stream kind (u16 LE) */
+enum {
+    APCM_KIND_MIXED = 0,
+    APCM_KIND_DL = 1,
+    APCM_KIND_UL = 2,
+};
 
 #define LOG_TAG "AI_Audio_Hook"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Round-7: UL+DL incall-rec (bidirectional), dump PCM until hangup, log L/R max-abs.
+// 1.D': DL-only incall-rec for STT; dump + UDS until hangup.
 
 using pcm_io_fn_t = int (*)(void *pcm, void *data, unsigned int count);
 using voice_fn1_t = int (*)(void *adev);
@@ -171,8 +178,8 @@ static bool load_capture_config(struct pcm_config *out) {
 
 static int open_dump_fd() {
     // Prefer vendor_data_file path; HAL needs sepolicy allow (see sepolicy.rule).
-    const char *paths[] = {"/data/vendor/ai_hook/ai_incall.pcm", "/data/local/tmp/ai_incall.pcm",
-                           "/data/adb/modules/ai_audio_hook/ai_incall.pcm"};
+    const char *paths[] = {"/data/vendor/ai_hook/ai_dl.pcm", "/data/vendor/ai_hook/ai_incall.pcm",
+                           "/data/local/tmp/ai_dl.pcm"};
     for (const char *p : paths) {
         // Existing pre-created file (chmod 666) first — avoids create permission.
         int fd = open(p, O_WRONLY | O_TRUNC);
@@ -180,56 +187,27 @@ static int open_dump_fd() {
             fd = open(p, O_CREAT | O_TRUNC | O_WRONLY, 0666);
         }
         if (fd >= 0) {
-            LOGI("Round-8 dump fd=%d path=%s", fd, p);
+            LOGI("DL dump fd=%d path=%s", fd, p);
             return fd;
         }
-        LOGI("Round-8 open(%s) failed errno=%d", p, errno);
+        LOGI("DL open(%s) failed errno=%d", p, errno);
     }
     return -1;
 }
 
-// 1.D: connect to Go receiver; send 16-byte header then raw s16le frames.
-static int uds_connect_send_hdr(unsigned rate, unsigned channels) {
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) {
-        LOGI("uds socket errno=%d", errno);
-        return -1;
-    }
-    struct sockaddr_un addr {};
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, PCM_SOCK_PATH, sizeof(addr.sun_path) - 1);
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        LOGI("uds connect(%s) errno=%d (is pcm_recv running?)", PCM_SOCK_PATH, errno);
-        close(fd);
-        return -1;
-    }
-    unsigned char hdr[16] = {};
-    auto put_u32 = [](unsigned char *p, unsigned v) {
-        p[0] = (unsigned char)(v);
-        p[1] = (unsigned char)(v >> 8);
-        p[2] = (unsigned char)(v >> 16);
-        p[3] = (unsigned char)(v >> 24);
-    };
-    auto put_u16 = [](unsigned char *p, unsigned v) {
-        p[0] = (unsigned char)(v);
-        p[1] = (unsigned char)(v >> 8);
-    };
-    put_u32(hdr + 0, APCM_MAGIC);
-    put_u32(hdr + 4, rate);
-    put_u16(hdr + 8, channels);
-    put_u16(hdr + 10, 16);
-    ssize_t w = write(fd, hdr, sizeof(hdr));
-    if (w != (ssize_t)sizeof(hdr)) {
-        LOGI("uds hdr write rc=%zd errno=%d", w, errno);
-        close(fd);
-        return -1;
-    }
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags >= 0) {
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    }
-    LOGI("uds connected fd=%d %s %uHz ch%u", fd, PCM_SOCK_PATH, rate, channels);
-    return fd;
+// 1.D: HAL is UDS server; Go pcm_recv connects as client (avoids magisk connect denials).
+static std::atomic<int> g_uds_client{-1};
+static std::atomic<bool> g_uds_hdr_sent{false};
+
+static void put_u32_le(unsigned char *p, unsigned v) {
+    p[0] = (unsigned char)(v);
+    p[1] = (unsigned char)(v >> 8);
+    p[2] = (unsigned char)(v >> 16);
+    p[3] = (unsigned char)(v >> 24);
+}
+static void put_u16_le(unsigned char *p, unsigned v) {
+    p[0] = (unsigned char)(v);
+    p[1] = (unsigned char)(v >> 8);
 }
 
 static size_t uds_send_all(int fd, const void *buf, size_t len) {
@@ -245,12 +223,90 @@ static size_t uds_send_all(int fd, const void *buf, size_t len) {
             continue;
         }
         if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            break; // drop remainder this period if peer slow
+            break;
         }
         LOGI("uds write fail errno=%d sent=%zu/%zu", errno, off, len);
+        // drop dead client
+        int cur = g_uds_client.load();
+        if (cur == fd && g_uds_client.compare_exchange_strong(cur, -1)) {
+            close(fd);
+            g_uds_hdr_sent.store(false);
+        }
         break;
     }
     return off;
+}
+
+static bool uds_send_hdr_if_needed(int fd, unsigned rate, unsigned channels, unsigned kind) {
+    if (fd < 0 || g_uds_hdr_sent.load()) {
+        return fd >= 0;
+    }
+    unsigned char hdr[16] = {};
+    put_u32_le(hdr + 0, APCM_MAGIC);
+    put_u32_le(hdr + 4, rate);
+    put_u16_le(hdr + 8, channels);
+    put_u16_le(hdr + 10, 16);
+    put_u16_le(hdr + 12, kind); // APCM_KIND_*
+    ssize_t w = write(fd, hdr, sizeof(hdr));
+    if (w != (ssize_t)sizeof(hdr)) {
+        LOGI("uds hdr write rc=%zd errno=%d", w, errno);
+        return false;
+    }
+    g_uds_hdr_sent.store(true);
+    LOGI("uds hdr sent fd=%d %uHz ch%u kind=%u", fd, rate, channels, kind);
+    return true;
+}
+
+static void *uds_server_thread(void *) {
+    unlink(PCM_SOCK_PATH);
+    int listen_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (listen_fd < 0) {
+        LOGI("uds listen socket errno=%d", errno);
+        return nullptr;
+    }
+    struct sockaddr_un addr {};
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, PCM_SOCK_PATH, sizeof(addr.sun_path) - 1);
+    if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        LOGI("uds bind(%s) errno=%d", PCM_SOCK_PATH, errno);
+        close(listen_fd);
+        return nullptr;
+    }
+    chmod(PCM_SOCK_PATH, 0666);
+    if (listen(listen_fd, 2) != 0) {
+        LOGI("uds listen errno=%d", errno);
+        close(listen_fd);
+        return nullptr;
+    }
+    LOGI("uds server listening on %s", PCM_SOCK_PATH);
+    while (true) {
+        int cfd = accept(listen_fd, nullptr, nullptr);
+        if (cfd < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            LOGI("uds accept errno=%d", errno);
+            break;
+        }
+        int flags = fcntl(cfd, F_GETFL, 0);
+        if (flags >= 0) {
+            fcntl(cfd, F_SETFL, flags | O_NONBLOCK);
+        }
+        int old = g_uds_client.exchange(cfd);
+        g_uds_hdr_sent.store(false);
+        if (old >= 0) {
+            close(old);
+        }
+        LOGI("uds client accepted fd=%d", cfd);
+    }
+    close(listen_fd);
+    return nullptr;
+}
+
+static void start_uds_server() {
+    pthread_t t;
+    pthread_create(&t, nullptr, uds_server_thread, nullptr);
+    pthread_detach(t);
 }
 
 static void *round7_incall_thread(void *) {
@@ -274,11 +330,10 @@ static void *round7_incall_thread(void *) {
         return nullptr;
     }
 
-    // Bidirectional: UL+DL session mode and both mixer taps.
-    LOGI("Round-7 enable incall-rec BIDIR sess=0x%x mode=%d (UL+DL)", vsid,
-         INCALL_REC_UPLINK_AND_DOWNLINK);
+    // 1.D': downlink only for STT (remote party).
+    LOGI("1.D' enable incall-rec DL-only sess=0x%x mode=%d", vsid, INCALL_REC_DOWNLINK);
     if (fn_set_incall_sess) {
-        int rc = fn_set_incall_sess(platform, vsid, INCALL_REC_UPLINK_AND_DOWNLINK);
+        int rc = fn_set_incall_sess(platform, vsid, INCALL_REC_DOWNLINK);
         LOGI("platform_set_incall_recording_session_id rc=%d", rc);
     }
 
@@ -303,7 +358,7 @@ static void *round7_incall_thread(void *) {
         LOGE("Round-7: mixer_open failed");
         return nullptr;
     }
-    set_mixer_int(mixer, get_ctl, set_val, "MultiMedia9 Mixer VOC_REC_UL", 1);
+    set_mixer_int(mixer, get_ctl, set_val, "MultiMedia9 Mixer VOC_REC_UL", 0);
     set_mixer_int(mixer, get_ctl, set_val, "MultiMedia9 Mixer VOC_REC_DL", 1);
 
     // Round-6 success path: 48k stereo
@@ -328,21 +383,17 @@ static void *round7_incall_thread(void *) {
         mixer_close(mixer);
         return nullptr;
     }
-    LOGI("Round-7 pcm READY d23 %uHz ch%u (UL+DL bidir)", cfg.rate, cfg.channels);
+    LOGI("1.D' pcm READY d23 %uHz ch%u (DL-only)", cfg.rate, cfg.channels);
     if (pcm_start) {
         LOGI("Round-7 pcm_start rc=%d", pcm_start(pcm));
     }
 
     int dump_fd = open_dump_fd();
-    int uds_fd = uds_connect_send_hdr(cfg.rate, cfg.channels);
     unsigned bytes = cfg.period_size * cfg.channels * 2;
     void *buf = malloc(bytes);
     if (!buf) {
         if (dump_fd >= 0) {
             close(dump_fd);
-        }
-        if (uds_fd >= 0) {
-            close(uds_fd);
         }
         pcm_close(pcm);
         mixer_close(mixer);
@@ -366,7 +417,8 @@ static void *round7_incall_thread(void *) {
                 total_bytes += (size_t)w;
             }
         }
-        if (uds_fd >= 0) {
+        int uds_fd = g_uds_client.load();
+        if (uds_fd >= 0 && uds_send_hdr_if_needed(uds_fd, cfg.rate, cfg.channels, APCM_KIND_DL)) {
             uds_bytes += uds_send_all(uds_fd, buf, bytes);
         }
         auto *p = (const int16_t *)buf;
@@ -396,13 +448,10 @@ static void *round7_incall_thread(void *) {
         }
     }
 
-    LOGI("Round-8 DONE hits=%d nz=%d maxL=%d maxR=%d dumped=%zu uds=%zu rate=%u ch=2 s16le", hits,
+    LOGI("1.D' DL DONE hits=%d nz=%d maxL=%d maxR=%d dumped=%zu uds=%zu rate=%u ch=2 s16le", hits,
          nonzero, max_l, max_r, total_bytes, uds_bytes, cfg.rate);
     if (dump_fd >= 0) {
         close(dump_fd);
-    }
-    if (uds_fd >= 0) {
-        close(uds_fd);
     }
     free(buf);
     pcm_close(pcm);
@@ -499,7 +548,8 @@ static void install_hooks() {
     fn_stop_incall = (stop_incall_fn_t)resolve_sym(prim, "platform_stop_incall_recording_usecase");
     fn_voice_sid = (voice_sid_fn_t)resolve_sym(prim, "voice_get_active_session_id");
 
-    LOGI("HAL Round-8+1.D hooks done (incall dump + UDS %s)", PCM_SOCK_PATH);
+    start_uds_server();
+    LOGI("HAL 1.D' hooks done (DL-only dump + UDS server %s)", PCM_SOCK_PATH);
 }
 
 static void *main_thread(void *) {

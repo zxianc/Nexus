@@ -10,7 +10,8 @@
 | [`01_magisk_native_build_and_verify.md`](01_magisk_native_build_and_verify.md) | 早期 Magisk 编译手记 | 历史归档 |
 | [`Magisk_Injection_Log.md`](Magisk_Injection_Log.md) | LD_PRELOAD 失败复盘 | 历史归档 |
 | [`02_zygisk_inject_progress.md`](02_zygisk_inject_progress.md) | 注入阶段操作手册 | 可小改验证命令 |
-| [`03_pcm_hook_next.md`](03_pcm_hook_next.md) | 1.C/1.D 里程碑 | 跟当前阶段同步 |
+| [`03_pcm_hook_next.md`](03_pcm_hook_next.md) | 当前里程碑 | 跟当前阶段同步 |
+| [`04_architecture_runtime.md`](04_architecture_runtime.md) | **现行实现：方案 / 数据流 / 线程** | 架构变更时改 |
 | [`../zygisk_module/doc/README.md`](../zygisk_module/doc/README.md) | 模块怎么编/装/验 | 跟代码同步 |
 
 ## 增量更新约定
@@ -22,4 +23,4 @@
 
 ## 当前进度一句话
 
-**1.C 完成：** HAL incall-rec 已抓到双向通话 PCM 并听验通过 → **下一步 1.D：UDS → Go**（TX 注入为 1.E 可选）。
+**1.C+1.D+1.D′+1.F+VAD(A) 完成；模块 v2.1 重装后自动注入/UDS 已验。** 下一步：**1.E** TX（`ai_call` 仍手动启）。

@@ -254,6 +254,99 @@
 
 ---
 
+## 2026-07-19 — 1.D 首通：落盘 OK，UDS errno=13
+
+- **落盘：** `dumped=2926080`（~15s），max≈25594，incall-rec 仍正常。
+- **UDS：** `uds=0`；`connect(...pcm.sock) errno=13`。`pcm_recv` 域为 `u:r:magisk:s0`，缺 `hal_audio_default ↔ magisk` unix_stream 放行。
+- **已补：** live magiskpolicy + `sepolicy.rule` 增加 magisk peer；待再测一通。
+
+---
+
+## 2026-07-19 — 1.D 通过：HAL Server + pcm_recv Client
+
+- **问题：** HAL `connect` magisk 域 socket → errno=13；补 peer allow 仍失败。
+- **翻转：** HAL `bind/listen` `/data/vendor/ai_hook/pcm.sock`；Go `pcm_recv` 作 client 重连。
+- **真机：** `uds hdr sent`；`dumped=3179520` **==** `uds=3179520`；`pcm_recv` `stream start 48000/2/16` 持续 recv；`uds_dump.pcm` 同大小。
+- **结论：** 阶段 **1.D 完成**（PCM 旁路已进 Go）。下一步：Go daemon/STT，或并行 **1.E incall-music**。
+
+## 2026-07-19 — 定稿：DL→STT + 软件合成存档
+
+- **接听模式：** 全 AI / 全人互斥，无「AI 与人同时回复」。
+- **AI 音频：** HAL **只采 DL** 给 STT；TTS 经 1.E 注入；存档 = Go **`mix(DL, TTS PCM)`**。
+- **人模式听验：** 继续可用已验证的 UL+DL 混合落盘。
+- **排除：** 硬件并行两路 incall-rec（DL + 混合）作存档。
+- **文档：** `plan.md` → v1.9；`03_pcm_hook_next.md` / `README.md` 已同步。
+- **下一步实现：** 1.D′ DL-only 推流 → 1.E TX → 1.F Go STT/合成。
+
+## 2026-07-19 — 开始 1.D′：HAL DL-only
+
+- **改动：** INCALL_REC_DOWNLINK + 仅 VOC_REC_DL；落盘 i_dl.pcm；APCM hdr[12]=kind（1=DL）。
+- **部署：** 已 reinject；UDS listening + pcm_recv connected。
+- **待测：** 打一通确认对方声、本机侧尽量无；日志 1.D DL DONE / kind=DL。
+
+## 2026-07-19 — 1.D′ 真机：DL 流 OK，待听验是否仅对方
+
+- **链路：** mode=DL；kind=DL(1)；dumped=uds=4041600（~21s）；max≈18724。
+- **落盘：** i_dl.pcm / uds_dl.pcm；本机 wav：	mp/ai_dl.wav。
+- **待确认：** 用户听验是否主要为对方声（本机侧应很少）。
+
+## 2026-07-19 — 1.D′ 听验通过：仅对方（DL）
+
+- **用户确认：** `ai_dl.wav` 只有对方声音，无本机侧。
+- **结论：** 阶段 **1.D′ 完成**；STT 输入路径就绪。
+- **下一步：** 1.E incall-music TX（TTS 对面可听），或 1.F Go STT/合成存档骨架。
+
+## 2026-07-19 — 1.F 起步：本地 STT 管线（ai_call）
+
+- **约束：** STT/TTS 本地；LLM 仅 DeepSeek（本步未接 LLM/TTS）。
+- **实现：** `daemon/ai_call`：UDS DL → 16k mono → 能量 VAD → mock|sherpa-onnx SenseVoice CLI → `stt.log`。
+- **资产：** 模型与 `sherpa-onnx-offline` 放 `/data/local/tmp/nexus_stt/`（不进 git）；见 `daemon/ai_call/README.md`。
+- **验收：** `go test ./...` 通过；已交叉编译 `ai_call_arm64`；真机已部署 mock 并 `connected to HAL`。拨测后看 `stt.log`；sherpa 需另推模型+CLI。
+
+## 2026-07-19 — 1.F mock 拨测通过
+
+- **流：** kind=DL；约 10s recv。
+- **VAD/STT：** stt.log 3 句 mock（800ms / 4560ms peak=7943 / 1980ms）。
+- **结论：** 切句管线真机可用；下一步推 sherpa 出真字。
+
+## 2026-07-19 — 1.F sherpa 真机听验通过
+
+- **资产：** `/data/local/tmp/nexus_stt/`（模型 `sense-voice/`、`sherpa-onnx-offline`、`libonnxruntime.so`）；离线 `zh.wav` →「开饭时间早上九点至下午五点」。
+- **启动：** `STT_BACKEND=sherpa` + `LD_LIBRARY_PATH=/data/local/tmp/nexus_stt`；`connected to HAL`；stream `kind=DL`。
+- **stt.log（节选）：** `喂。` / `哎，你好，你的呃外卖已经放在门口了。` / `外卖放在门口。` / `听见吗？` / `OKOK好的。`
+- **噪声：** 偶发仅 `。`（peak 偏低或静音切句）；下一步收紧 VAD / 过滤空识别。
+- **结论：** 阶段 **1.F 真机 sherpa 听验完成**；DL→VAD→SenseVoice 端到端可用。下一：**VAD 调优** 或 **1.E TX**。
+
+## 2026-07-19 — VAD 方案 A：空识别过滤 + MinSpeechMs
+
+- **改动：**
+  1. `hasSpeechText`：STT 结果无字母/数字（含 CJK）则 `DROP`，只写 `ai_call.log`，不进 `stt.log`。
+  2. `DefaultVADConfig.MinSpeechMs`：300 → 500。
+- **验收：** `go test ./...` 通过；已推真机 sherpa 重启。
+- **待测：** 再打一通，确认真句仍进 `stt.log`，纯 `。` 被 DROP。
+
+## 2026-07-19 — VAD 方案 A 拨测通过
+
+- **stt.log（仅真句）：** `喂，你好。` / `哎，你这个。` / `外卖到了。` / `给你放在门口了。`
+- **ai_call.log：** 2 条 `DROP text="。"`（peak≈464/575），未进 `stt.log`。
+- **结论：** 空识别过滤有效；VAD 方案 A 完成。下一 **1.E TX**。
+
+## 2026-07-19 — 文档：现行架构 / 线程模型
+
+- **新增：** [`04_architecture_runtime.md`](04_architecture_runtime.md)（技术方案、数据流、HAL pthread + Go goroutine、Boot 维持）。
+- **索引：** `doc/README.md` / `plan.md` 已挂链。
+
+## 2026-07-19 — 文档：补充各部分作用与数据流向
+
+- **改：** `04_architecture_runtime.md` §2「各部分作用」、§3「数据流向」——分层职责、输入/输出表、一图端到端、格式变换、路径清单、与目标全 AI 链路对照。
+
+## 2026-07-19 — 可移植性：重装模块 v2.1 自动注入通过
+
+- **做了什么：** `build.bat` 打出 `ai_audio_hook_zygisk.zip`（`module.prop` → **v2.1 / versionCode=3**）；Magisk 重装 → **重启**。
+- **验证：** HAL pid maps 含 `/vendor/lib/libai_hook.so`；`/data/vendor/ai_hook/pcm.sock` 存在；`AI_Audio_Hook` 有日志。
+- **Magisk 噪声：** `openat zygisk/armeabi-v7a.so: No such file`——zip 仅含 `zygisk/arm64-v8a.so`，32-bit 进程加载 Zygisk companion 时告警；**不影响** `service.sh`→`inject32`→HAL 主线。
+- **结论：** 装模块 + 重启后注入与 UDS **可自动恢复**；`ai_call` 仍需手动启动。下一 **1.E TX**。
+
 <!-- 新条目模板（复制到文末填写）：
 
 ## YYYY-MM-DD — 标题

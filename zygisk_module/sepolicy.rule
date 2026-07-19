@@ -4,13 +4,18 @@ allow hal_audio_default hal_audio_default process execmem
 allow hal_audio_default system_file file { read open getattr map execute execute_no_trans }
 allow hal_audio_default system_lib_file file { read open getattr map execute execute_no_trans }
 allow hal_audio_default vendor_file file { read open getattr map execute execute_no_trans }
-# PCM dump + UDS (1.D)
+# PCM dump + UDS (1.D) - HAL binds/listens; pcm_recv (magisk/shell) connects
 allow hal_audio_default vendor_data_file dir { search write add_name create getattr open read remove_name }
 allow hal_audio_default vendor_data_file file { create open write getattr setattr append read unlink }
-allow hal_audio_default vendor_data_file sock_file { create open write getattr setattr unlink connect }
+allow hal_audio_default vendor_data_file sock_file { create open write getattr setattr unlink }
 allow hal_audio_default shell_data_file dir { search write add_name create getattr open read }
 allow hal_audio_default shell_data_file file { create open write getattr setattr append read }
-allow hal_audio_default hal_audio_default unix_stream_socket { create connect write read getopt setattr getattr }
-# Peer may be shell/su when testing pcm_recv
-allow hal_audio_default shell unix_stream_socket { connect write read getopt getattr }
-allow shell hal_audio_default unix_stream_socket { accept listen read write getopt getattr }
+allow hal_audio_default hal_audio_default unix_stream_socket { create bind listen accept write read getopt setattr getattr }
+allow hal_audio_default magisk unix_stream_socket { accept listen write read getopt getattr }
+allow magisk hal_audio_default unix_stream_socket { connect write read getopt getattr }
+allow magisk vendor_data_file dir { search getattr }
+allow magisk vendor_data_file sock_file { write getattr }
+allow hal_audio_default shell unix_stream_socket { accept listen write read getopt getattr }
+allow shell hal_audio_default unix_stream_socket { connect write read getopt getattr }
+allow shell vendor_data_file dir { search getattr }
+allow shell vendor_data_file sock_file { write getattr }

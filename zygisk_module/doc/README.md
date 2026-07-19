@@ -7,11 +7,12 @@
 1. **载荷路径（重要）：** `/vendor/lib/libai_hook.so`（armeabi-v7a）  
    - 勿放 `/system/lib`：HAL linker namespace 会拒绝  
 2. **注入目标：** `android.hardware.audio.service`（`inject32`）  
-3. **通话 PCM：** incall-rec  
-   - `platform_set_incall_recording_session_id` + `MultiMedia9 Mixer VOC_REC_UL/DL`  
-   - `pcm_read` card0 **device 23** @ 48kHz s16le（L≡R 混合上下行）  
-4. **落盘：** `/data/vendor/ai_hook/ai_incall.pcm`（需 `vendor_data_file` 写权限）  
-5. sepolicy：`hal_audio_default` 的 `execmem` + 读写 `vendor_data_file` / `shell_data_file`
+3. **通话 PCM：** incall-rec（`pcm_read` card0 **device 23** @ 48kHz s16le）
+   - **已验证：** UL+DL 混合（听验/人模式存档）
+   - **AI 模式目标：** **DL-only** → UDS → STT；存档由 Go `mix(DL,TTS)`（见 `doc/plan.md` v1.9）
+4. **UDS：** HAL listen `/data/vendor/ai_hook/pcm.sock`；Go `pcm_recv` connect  
+5. **落盘：** `/data/vendor/ai_hook/ai_incall.pcm`（需 `vendor_data_file` 写权限）  
+6. sepolicy：`hal_audio_default` 的 `execmem` + `vendor_data_file` + UDS（含 magisk peer）
 
 ## 目录
 
@@ -55,8 +56,19 @@ adb shell 'su -c "/data/adb/modules/ai_audio_hook/bin/inject32 android.hardware.
 ## 已验证（2026-07-19）
 
 - HAL 注入 + Dobby（dlsym）稳定 ✅  
-- CS `voice_start_usecase(41)` ✅  
-- incall-rec 双向通话 PCM 落盘并听验通过 ✅  
+- CS `voice_start_usecase` + incall-rec（混合 / **DL-only**）✅  
+- UDS + `ai_call` sherpa STT ✅  
+- **模块 v2.1 重装 + 重启 → `service.sh` 自动 inject** ✅（maps + `pcm.sock`）
+
+## 开机后自检（PowerShell）
+
+```powershell
+adb shell "su -c 'cat /data/adb/modules/ai_audio_hook/module.prop'"
+adb shell "su -c 'hp=\$(pidof android.hardware.audio.service); grep libai_hook /proc/\$hp/maps'"
+adb shell "su -c 'ls -la /data/vendor/ai_hook/pcm.sock'"
+```
+
+期望：`version=v2.1`；maps 有 `libai_hook`；存在 `pcm.sock`。
 
 ## 常见坑
 
@@ -65,5 +77,6 @@ adb shell 'su -c "/data/adb/modules/ai_audio_hook/bin/inject32 android.hardware.
 | `dlopen` namespace 拒绝 | 载荷必须在 `/vendor/lib` |
 | Dobby maps SIGBUS | HAL 侧用 `dlsym`，勿 `DobbySymbolResolver` |
 | dump `errno=13` | sepolicy 写 `vendor_data_file`；预建文件 chmod 666 |
-| PowerShell `$(pidof)` | `adb shell 'su -c "..."'` 外层单引号 |
+| PowerShell `$(pidof)` | 勿让 PS 展开；用 `adb shell su -c "..."` 或外层单引号 |
+| Magisk：`zygisk/armeabi-v7a.so` missing | 仅缺 32-bit Zygisk companion；**主线 inject32 不受影响** |
 | 以为能「对面接听 AI」 | VOC_REC 只录音；TX 用 incall-music |
