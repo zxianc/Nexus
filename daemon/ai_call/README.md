@@ -94,7 +94,8 @@ export LD_LIBRARY_PATH=/data/local/tmp/nexus_stt
 
 ### Echo：STT 出字后自动播回（无 LLM）
 
-**推荐（常驻引擎）：** `nexus_engine` 一次加载 SenseVoice+VITS，`ai_call -backend engine`。
+**推荐（常驻引擎）：** `nexus_engine` 一次加载 SenseVoice+VITS，`ai_call -backend engine`。  
+原理与协议见 [`../nexus_engine/README.md`](../nexus_engine/README.md)。
 
 ```bash
 # 或 sh /data/local/tmp/start_echo.sh
@@ -116,6 +117,9 @@ nohup /data/local/tmp/ai_call -backend engine -llm >>/data/vendor/ai_hook/ai_cal
 ```
 
 流式：SSE 收字 → 按 `。！？.!?\n` 切句 → 逐句 TTS；句间等待 HAL 播完（避免覆盖 `tx_inject` 队列）。`-llm` 优先于 `-echo-tts`。
+**上下文：** 同一通电话内累积对话历史发给模型；挂断/新 stream 清空；默认最多 24 条（`LLM_MAX_MSGS`）。
+**存档：** 挂断后写 `/data/vendor/ai_hook/calls/call_*.txt`（摘要 + 全文）。企微/短信推送后续再做。
+**打断：** 默认关（`LLM_BARGE_IN=0` / `-llm-barge-in=false`）。开启后仅 TTS 播放中可打断（短静音切 TX 并重开）；思考中或开关关闭时新真句只排队为下一轮。启动前默认防抖 600ms（`LLM_REPLY_DEBOUNCE_MS`）。
 
 ## Flag / 环境变量
 
@@ -132,9 +136,12 @@ nohup /data/local/tmp/ai_call -backend engine -llm >>/data/vendor/ai_hook/ai_cal
 | `-say` | — | 非空则 TTS→TX 后退出 |
 | `-echo-tts` | `ECHO_TTS` | `false`；STT OK 后同文播 TX |
 | `-llm` | `LLM` | `false`；STT→DeepSeek→切句 TTS→TX |
+| `-llm-barge-in` | `LLM_BARGE_IN` | `false`；TTS 播放中允许语音打断 |
 | `-llm-key` | `DEEPSEEK_API_KEY` | 空则读 key 文件 |
 | `-llm-key-file` | `DEEPSEEK_KEY_FILE` | `…/deepseek.key` |
 | `-llm-model` | `DEEPSEEK_MODEL` | `deepseek-v4-flash` |
+| `-llm-max-msgs` | `LLM_MAX_MSGS` | `24`（单通历史条数，不含 system） |
+| `-archive-dir` | `CALL_ARCHIVE_DIR` | `…/ai_hook/calls` |
 | `-llm-base` | `DEEPSEEK_BASE` | `https://api.deepseek.com` |
 | `-tts-bin` | `TTS_BIN` | `…/sherpa-onnx-offline-tts` |
 | `-tts-model` | `TTS_MODEL_DIR` | `…/vits-zh-ll` |

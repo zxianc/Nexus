@@ -1,6 +1,6 @@
-id=ai_audio_hook
-name=AI Audio Hook (Zygisk)
-version=v2.1
-versionCode=3
+id=nexus_audio_hook
+name=Nexus Audio Hook (Zygisk)
+version=v2.2
+versionCode=4
 author=Nexus
-description=ptrace inject libai_hook.so into audio HAL (32-bit) + UDS/DL incall-rec
+description=ptrace inject libai_hook.so into audio HAL (32-bit) + UDS/DL incall-rec (renamed from ai_audio_hook)

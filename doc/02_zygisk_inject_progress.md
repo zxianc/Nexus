@@ -4,7 +4,7 @@
 **日期:** 2026-07-18  
 **设备:** OnePlus 8T（高通骁龙 865 / LineageOS 23.2），Magisk + Zygisk  
 **模块目录:** `zygisk_module/`  
-**模块 ID:** `ai_audio_hook`  
+**模块 ID:** `nexus_audio_hook`（原 `ai_audio_hook`）
 **当前状态:** **注入 + Dobby 探测 Hook 均已在真机验证通过**
 
 ---
@@ -14,7 +14,7 @@
 | 里程碑 | 状态 | 说明 |
 |--------|------|------|
 | Windows NDK 交叉编译 / 打包 | 完成 | `build.bat` + Python 正斜杠 ZIP |
-| Magisk 模块落地 | 完成 | `/data/adb/modules/ai_audio_hook/` |
+| Magisk 模块落地 | 完成 | `/data/adb/modules/nexus_audio_hook/`（旧 id 请卸载） |
 | Overlay `/system/lib64/libai_hook.so` | 完成 | 重启后可见 |
 | ptrace remote dlopen | 完成 | maps 含 `libai_hook.so` |
 | constructor 异步线程 | 完成 | `Zygisk inject OK` |

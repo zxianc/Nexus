@@ -77,9 +77,10 @@ echo [INFO] Pack zip with forward slashes (Python)...
 python pack_zip.py
 if errorlevel 1 exit /b 1
 
-echo [SUCCESS] Output: ai_audio_hook_zygisk.zip
+echo [SUCCESS] Output: nexus_audio_hook_zygisk.zip
 echo          lib64 = audioserver (optional), lib = HAL 32-bit pcm hooks
 echo          Enable Zygisk, install zip, reboot.
+echo          Uninstall old module id ai_audio_hook if still present.
 echo          Then: adb logcat -d -s AI_Audio_Hook:I AI_Inject:I
 endlocal
 exit /b 0

@@ -16,7 +16,7 @@
 ## 音频方案（定稿）
 
 - **全 AI / 全人互斥**，无同时回复。
-- **AI 模式：**  HAL **只采 DL** → STT →LLM → TTS → **1.E 注入**；存档 = Go `mix(DL, TTS)`。
+- **AI 模式：**  HAL **只采 DL** → STT →LLM → TTS → **1.E 注入**；**现行文本存档**（挂断写摘要+对话）；语音 `mix(DL,TTS)` **TODO 延期**。
 - **人模式听验：** 可继续混合 UL+DL 落盘。
 - **不做** 硬件双路 incall-rec 并行。
 
@@ -54,37 +54,45 @@
 - 路径：MultiMedia9 + **pcm OUT d23**；格式 **48k mono s16le**；默认静音保活
 - **模型：** `sherpa-onnx-vits-zh-ll`；`ai_call -say` → `tx_inject.pcm`；播完 unlink（每句重写）
 - **听验：** 对面女声「你好能听到嘛」；音色=模型/`-tts-sid`，换模型可换声
-- **下一：** 闭环 STT→LLM→TTS；`mix(DL,TTS)` / DeepSeek 仍未做
 
-### ⏳ STT → LLM → TTS 闭环
+### ✅ STT → LLM → TTS 闭环 — 已完成（2026-07-19）
 
-- [x] **Echo（无 LLM）：** `-echo-tts`；通话听验已通过（CLI 路径 ~3–4s）
-- [x] **常驻引擎（方案 B）：** `nexus_engine` + `-backend engine`；**跨通话常驻**，模型一次加载；echo 听验通过（勿开通话静音，静音会挡上行含 TTS）
-- [x] **DeepSeek 流式（方案 A）：** `-llm`；STT → SSE → 切句 TTS→TX（待通话听验）
-- [ ] 存档 `mix(DL, TTS)`
+- [x] **Echo（无 LLM）：** `-echo-tts`；通话听验已通过
+- [x] **常驻引擎（方案 B）：** `nexus_engine` + `-backend engine`；跨通话常驻
+- [x] **DeepSeek 流式（方案 A）：** `-llm`；STT → SSE → 切句 TTS→TX；**通话听验通过**
+- [x] **通内上下文：** `CallSession`；挂断清空；默认最多 24 条非 system（`LLM_MAX_MSGS`，防费用/延迟）
+- [x] **文本存档：** 挂断后落盘对话全文 + DeepSeek 摘要 → `/data/vendor/ai_hook/calls/call_*.txt`
+- [ ] **TODO（延期）** 语音存档 `mix(DL, TTS)`（需按 TX 播放时间轴对齐，防错位）
+- [ ] **TODO（延期）** 企微推送 + 短信转发（**同一后续里程碑一起做**：摘要/全文推送）
 - [ ] （可选）静音麦但仍允许 AI TX
+- [ ] （可选）开机自启 `ai_call` / 业务 Magisk 模块
 
-### TODO — 独立 Magisk 模块：业务侧资产（未做，不急）
+**注意：** 通话「静音」会挡上行（含 TTS）；测试勿静音。Key 放设备 `…/deepseek.key`，勿进 git。
 
-与 HAL 注入模块 **`ai_audio_hook` 解耦**，另做模块（暂名 `nexus_runtime` / `nexus_stt`）管理用户态资产，建议根目录例如 `/data/adb/nexus_stt/`（或模块自有 `files/`）：
+### TODO — Magisk 三模块（`nexus_audio_hook` / `nexus_runtime` / `nexus_models`）
 
-- [ ] `sherpa-onnx-offline` + `libonnxruntime.so` + SenseVoice 模型
-- [ ] Go：`ai_call`（及后续 daemon）
-- [ ] （后续）**TTS** 引擎/模型与其它业务数据
-- [ ] （可选）开机自启业务进程；**不**碰 inject / UDS server / HAL so
+与 HAL 注入 **解耦**，程序与模型 **双包**：
 
-原则：驱动+UDS 仍只由 `ai_audio_hook` 负责；ASR/TTS/Go 只消费 `pcm.sock`，资产生命周期单独版本化。
+| 模块 | 职责 |
+|------|------|
+| **`nexus_audio_hook`** | 仅 HAL+UDS+TX（原 `ai_audio_hook`，v2.2 更名；so/逻辑未改） |
+| **`nexus_runtime`** | `ai_call`、`nexus_engine`、lib、配置、自启 — 见 [`magisk_modules/`](../magisk_modules/README.md) |
+| **`nexus_models`** | SenseVoice / VITS — 同上（与 runtime 分 zip） |
+
+运行时配置：`/data/adb/nexus/env.sh` + `secrets/deepseek.key`（`config.json` 预留给设置 UI）。  
+原则：ASR/TTS/Go 只消费 `pcm.sock`；inject **不**进 runtime/models。
 
 ### 定稿 — 采集 vs 业务（2026-07-19）
 
-- **`ai_audio_hook`（HAL）：** 通话接通就采 DL → 落盘 + UDS；**不做**按卡/模式开关采集，**暂不考虑**为省电关旁路。
-- **业务层（Go / 策略服务）：** 决定用不用：AI 处理 / 丢弃 / 不启 STT；双卡（卡1 自动接听 AI、卡2 拒接或放行人工）也在业务层，**不**进 HAL。
+- **`nexus_audio_hook`（HAL）：** 通话接通就采 DL → 落盘 + UDS；**不做**按卡/模式开关采集，**暂不考虑**为省电关旁路。
+- **业务层（Go / 策略服务）：** 决定用不用：AI 处理 / 丢弃 / 不启 STT；双卡策略在业务层，**不**进 HAL。
 - 以后若真要省电，再加可选「整段旁路总开关」作优化，不作为默认设计。
 
-### 定稿 — 短信转发（未做）
+### 定稿 — 短信转发 + 企微推送（未做，捆绑后续）
 
-- **不要**做进 `ai_audio_hook`（音频注入与短信无关）。
+- **不要**做进 `nexus_audio_hook`（音频注入与短信无关）。
 - **另做**短信侧能力（独立 Magisk 模块或独立组件）：只负责收/窥短信事件并交给用户态。
-- **Go 统一配置与编排**（哪张卡转发、摘要/推企微等）；各模块解耦，只通过约定 IPC/文件/ socket 对接业务 daemon。
-- 可与「业务侧资产模块」同仓不同模块，或短信单独模块——**均不与 HAL 耦合**。
+- **Go 统一配置与编排**（哪张卡转发、通话摘要/全文推企微等）；与 HAL/STT 解耦。
+- **企微推送**与短信出站 **同一里程碑一起做**（现已先做通话文本落盘，推送后接）。
+- 可与「业务侧资产模块」同仓不同模块——**均不与 HAL 耦合**。
 

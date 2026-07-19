@@ -228,6 +228,55 @@ func (c *Client) ChatStream(ctx context.Context, msgs []Message, onSentence func
 	return full.String(), nil
 }
 
+// Chat is a non-streaming completion (used for end-of-call summary).
+func (c *Client) Chat(ctx context.Context, msgs []Message) (string, error) {
+	if strings.TrimSpace(c.APIKey) == "" {
+		return "", fmt.Errorf("deepseek: empty API key")
+	}
+	body, err := json.Marshal(map[string]any{
+		"model":    c.model(),
+		"messages": msgs,
+		"stream":   false,
+		"thinking": map[string]string{"type": "disabled"},
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base()+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("deepseek: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", fmt.Errorf("deepseek: decode: %w", err)
+	}
+	if len(parsed.Choices) == 0 {
+		return "", fmt.Errorf("deepseek: empty choices")
+	}
+	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+}
+
 // LoadAPIKey prefers envKey (already resolved), else reads keyFile (trimmed).
 func LoadAPIKey(envKey, keyFile string) (string, error) {
 	if k := strings.TrimSpace(envKey); k != "" {
@@ -249,4 +298,4 @@ func LoadAPIKey(envKey, keyFile string) (string, error) {
 }
 
 // DefaultSystemPrompt keeps replies short for phone TTS.
-const DefaultSystemPrompt = `你是电话助理。用简体中文简短回答对方，每句尽量短，适合语音播报。不要用 Markdown、列表或表情。不要复述对方原话，直接回应。`
+const DefaultSystemPrompt = `你是电话助理。用简体中文简短回答对方，每句尽量短，适合语音播报。不要用 Markdown、列表或表情。结合本通电话已有对话上下文回应，不要复述对方原话。`

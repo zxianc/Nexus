@@ -1,6 +1,6 @@
-id=ai_audio_hook
-name=AI Audio Hook (audioserver)
+id=nexus_audio_hook
+name=Nexus Audio Hook (audioserver) [legacy tree]
 version=v1.0
 versionCode=1
 author=Developer
-description=Hooks into Android's audioserver to intercept and inject PCM audio streams for the AI Call Agent.
+description=LEGACY — use zygisk_module / nexus_audio_hook. Old audioserver overlay experiment.

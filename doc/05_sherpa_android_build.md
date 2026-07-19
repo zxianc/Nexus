@@ -171,7 +171,7 @@ adb shell "su -c 'LD_LIBRARY_PATH=/data/local/tmp/nexus_stt /data/local/tmp/nexu
 
 - 产物与模型体积大，**勿提交 git**（`tmp/`、设备 `/data/local/tmp/nexus_stt/`）。
 - 脚本里 NDK/CMake 路径写死为本机 SDK；换机器请改脚本顶部变量。
-- Magisk **`ai_audio_hook` 不包含** sherpa；现行推 `/data/local/tmp/nexus_stt` 仅调试。
+- Magisk **`nexus_audio_hook` 不包含** sherpa；模型归 **`nexus_models`**，程序归 **`nexus_runtime`**（待做）。现行推 `/data/local/tmp/nexus_stt` 仅调试。
 - **TODO（未做）：** 另做业务侧 Magisk 模块托管 CLI/模型/`ai_call`/后续 TTS，与 HAL 解耦——见 [`03_pcm_hook_next.md`](03_pcm_hook_next.md)。
 - 升级 sherpa 版本时：改 clone 的 tag，并确认 ORT 版本与官方该 tag 兼容。
 
@@ -179,10 +179,12 @@ adb shell "su -c 'LD_LIBRARY_PATH=/data/local/tmp/nexus_stt /data/local/tmp/nexu
 
 ## 8. 常驻引擎 `nexus_engine`（方案 B）
 
+**说明文档（原理 / 协议 / 构建）：** [`daemon/nexus_engine/README.md`](../daemon/nexus_engine/README.md)
+
 源码：[`daemon/nexus_engine/main.cc`](../daemon/nexus_engine/main.cc)  
 构建：`daemon/nexus_engine/build_api28.ps1`（链已有 sherpa 静态库；需 `-Wl,-z,max-page-size=16384` 避免 Bionic TLS 对齐错误）
 
-- 启动加载 SenseVoice + VITS 各一次；UDS `/data/local/tmp/nexus_stt/engine.sock` 行 JSON（`ping`/`stt`/`tts`）
+- 启动加载 SenseVoice + VITS 各一次；UDS 行 JSON（`ping`/`stt`/`tts`）
 - `ai_call -backend engine` 由 Go `engine.Supervisor` 拉起或复用
 - 冷启动约 2–3s；常驻后单次 TTS 约 1s（日志 `tts id=… ms=`）
 
@@ -212,6 +214,7 @@ adb shell "su -c 'LD_LIBRARY_PATH=/data/local/tmp/nexus_stt /data/local/tmp/nexu
 | `daemon/ai_call/scripts/rebuild_sherpa_api28.ps1` | API 28 重编 STT CLI |
 | `daemon/ai_call/scripts/build_sherpa_tts_api28.ps1` | API 28 编 TTS CLI |
 | `daemon/nexus_engine/build_api28.ps1` | **现行** 常驻引擎 |
+| `daemon/nexus_engine/README.md` | 引擎原理 / UDS 协议 / 与 CLI 区别 |
 | `daemon/ai_call/engine/` | Go Supervisor / Client |
 | `daemon/ai_call/stt/sherpa.go` / `tts/sherpa.go` | CLI 回退 |
 | `daemon/ai_call/stt/engine.go` / `tts/engine.go` | 常驻引擎后端 |

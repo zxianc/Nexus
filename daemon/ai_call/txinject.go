@@ -35,6 +35,28 @@ func clearTXInject(path string) {
 	_ = os.Remove(path)
 }
 
+// silenceS16Mono returns ms of zeroed mono s16le PCM (used to cut TX barge-in).
+func silenceS16Mono(rate, ms int) []byte {
+	if rate <= 0 || ms <= 0 {
+		return nil
+	}
+	n := rate * ms / 1000
+	return make([]byte, n*2)
+}
+
+// interruptTX replaces the HAL inject queue with a short silence so barge-in cuts speech.
+func interruptTX(path string, rate int) {
+	if rate <= 0 {
+		rate = defaultTXRate
+	}
+	pcm := silenceS16Mono(rate, 80)
+	if len(pcm) == 0 {
+		clearTXInject(path)
+		return
+	}
+	_ = writeTXInject(path, pcm)
+}
+
 // gainS16Mono scales mono s16le in-place (clipped). gain=1 keeps level.
 func gainS16Mono(pcm []byte, gain float64) {
 	if gain == 1 || len(pcm) < 2 {

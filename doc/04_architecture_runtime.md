@@ -1,9 +1,9 @@
 # Nexus 现行实现：技术方案 / 数据流 / 线程模型
 
 **日期：** 2026-07-19  
-**对应进度：** 1.A～1.F、VAD(A)、**1.E TX + 本地 TTS 通话听验 ✅**；**闭环 LLM / mix 存档 / 企微未做**  
+**对应进度：** 1.A～1.F、DeepSeek 闭环 + 通内上下文 + **文本存档落盘 ✅**；**语音 mix / 企微+短信 TODO 延期**
 **目标机：** OnePlus 8T / 骁龙 865 / LineageOS + Magisk Zygisk  
-**模块版本：** `ai_audio_hook` **v2.1**（versionCode=3）  
+**模块版本：** `nexus_audio_hook` **v2.2**（versionCode=4；原 `ai_audio_hook`）
 
 **相关文档：** [`plan.md`](plan.md)（总方案）· [`dev_journal.md`](dev_journal.md)（过程）· [`03_pcm_hook_next.md`](03_pcm_hook_next.md)（下一里程碑）· [`daemon/ai_call/README.md`](../daemon/ai_call/README.md)
 
@@ -15,11 +15,14 @@
 
 **不做：** 在 `audioserver` 抓通话 PCM（通话段 AF standby）；硬件双路 incall-rec。  
 **已做 TX：** `ai_call -say` / echo → VITS → `tx_inject.pcm` → incall-music。  
-**常驻引擎：** `nexus_engine`（SenseVoice+VITS 同进程）← UDS ← `ai_call -backend engine`；**未做** DeepSeek、mix 存档。
+**常驻引擎：** `nexus_engine`（SenseVoice+VITS 同进程）← UDS ← `ai_call -backend engine`。  
+**LLM：** DeepSeek 云端 SSE（`-llm`）；通内 `CallSession`；挂断写文本档案（摘要+对话）到 `calls/`。  
+**打断：** `LLM_BARGE_IN`（默认关）；开则仅 TTS 播放中可 barge-in，思考中新句排队。详见 [`daemon/ai_call/README.md`](../daemon/ai_call/README.md)。
+**TODO 延期：** 语音 `mix(DL,TTS)`；企微推送与短信转发同一里程碑。
 
 **职责定稿（2026-07-19）：**
 
-- **HAL（`ai_audio_hook`）：** 只管采集——通话接通就 DL → 落盘 + UDS；**不**按卡/模式动态关采集；**暂不考虑**省电而关旁路。
+- **HAL（`nexus_audio_hook`）：** 只管采集——通话接通就 DL → 落盘 + UDS；**不**按卡/模式动态关采集；**暂不考虑**省电而关旁路。
 - **业务层（Go / 以后策略服务）：** 决定用不用（STT/AI / 丢弃）；双卡自动接听/拒接/放行人工也在业务层，不进 HAL。
 
 ---
@@ -165,12 +168,13 @@
 | `pcm_read` → `ai_dl.pcm` | 同 PCM 写文件 | 人工听验、对齐字节数 |
 | `pcm_read` → `pcm.sock` → `ai_call` | 同 PCM 过 UDS | 实时 STT 输入 |
 | `ai_call` → 16k mono 句 | 切好的短 PCM | STT 引擎输入 |
-| STT → `stt.log` | 中文句子 | 后续接 LLM 的输入（未接） |
+| STT → `stt.log` | 中文句子 | 同时作为 LLM user 输入 |
 
 **当前没有的回流（故图上没有）：**
 
 - TTS PCM → 通话上行（1.E）
-- LLM / 企微出站
+- 企微出站 + 短信转发（捆绑后续）
+- 语音 `mix(DL, TTS)` 存档（延期）
 
 ### 3.2 按阶段：通话建立时 HAL 里发生什么
 
@@ -241,9 +245,11 @@ pcm.sock
 | 段 | 现行 | 目标（未做） |
 |----|------|--------------|
 | 对方声 → STT | ✅ DL → ai_call → stt.log | 同左 |
-| 文字 → 思考 | ❌ | DeepSeek |
-| 回复声 → 对方 | ✅ 手动 `-say` | STT→LLM→TTS 自动 |
-| 存档「对方+AI」 | ❌（现只有 DL 落盘） | Go `mix(DL, TTS PCM)` |
+| 文字 → 思考 | ✅ DeepSeek 流式 | 通内上下文；跨通话不记 |
+| 回复声 → 对方 | ✅ STT→LLM→TTS→TX | `-llm`；勿静音 |
+| 存档「对方+AI」文本 | ✅ 挂断落盘 | `/data/vendor/ai_hook/calls/` |
+| 存档「对方+AI」语音 | ❌ TODO 延期 | Go `mix(DL, TTS)` 按播放时间轴 |
+| 企微 / 短信 | ❌ TODO 捆绑后续 | 先落盘 |
 
 ---
 
@@ -308,7 +314,7 @@ main（主 goroutine）
 | `sepolicy.rule` | Magisk 持久 | execmem、vendor_data 写、UDS HAL↔magisk/shell |
 | `service.sh` | `boot_completed` + 8s | 最多 12 次、间隔 3s：`inject32` HAL；maps 有 `libai_hook` 则成功 |
 
-**`ai_call` 本身不进 Magisk 自启**（现行手动 / adb `nohup`）。重启后需重新推起，并带 `LD_LIBRARY_PATH`（sherpa）。
+**`ai_call` / `nexus_engine`：** 正式路径由 **`nexus_runtime` `service.sh` 开机拉起**；调试仍可用 `/data/local/tmp` + `LD_LIBRARY_PATH`。
 
 ### 4.4 一张总图：谁在跑
 
@@ -390,12 +396,14 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 |----|------|
 | 1.E incall-music **TX** + 本地 VITS TTS | ✅（手动 `-say`；每句重写 inject） |
 | 常驻 `nexus_engine` + echo | ✅（`-backend engine`） |
-| DeepSeek LLM / STT→LLM→TTS 自动闭环 | 未做 |
-| Go 内 `mix(DL, TTS)` 存档 | 未做 |
-| 企微推送 | 未做 |
-| `ai_call` Magisk 开机自启 | 未做 |
+| DeepSeek LLM / STT→LLM→TTS 自动闭环 | ✅（通内 session，默认 24 条上限） |
+| 通话文本存档 + 摘要落盘 | ✅ `calls/call_*.txt` |
+| 语音打断（barge-in） | ✅ 开关 `LLM_BARGE_IN`（默认关）；仅 TTS 中打断 |
+| `mix(DL, TTS)` 语音存档 | TODO 延期（时间轴对齐） |
+| 企微推送 + 短信转发 | TODO 捆绑后续 |
+| Magisk 开机自启 `ai_call` + `nexus_engine` | ✅ `nexus_runtime` `service.sh` |
 
-目标音频方案（全 AI）：`DL → STT → LLM → TTS → 1.E 注入`；存档用软件 mix。见 [`plan.md`](plan.md)。
+目标音频方案（全 AI）：`DL → STT → LLM → TTS → 1.E 注入`；**现行文本存档**；语音 mix / 企微+短信见 TODO。见 [`plan.md`](plan.md)。
 
 ---
 
@@ -405,10 +413,13 @@ adb shell 'su -c "pkill -9 pcm_recv; pkill -9 ai_call; \
 |------|------|
 | `zygisk_module/cpp/audio_hook_hal.cpp` | HAL Hook、UDS server、Round-7 |
 | `zygisk_module/service.sh` / `post-fs-data.sh` / `sepolicy.rule` | 注入与权限 |
-| `daemon/ai_call/main.go` | 重连循环、runStream、sttWorker |
+| `daemon/ai_call/main.go` | 重连、runStream、sttWorker、`replyScheduler`（防抖/打断开关） |
+| `daemon/ai_call/txinject.go` | `tx_inject.pcm` 写入 / barge-in 短静音 |
 | `daemon/ai_call/vad.go` / `textutil.go` | VAD、空识别过滤 |
 | `daemon/ai_call/uds.go` / `pcmutil.go` | APCM、重采样 |
+| `daemon/ai_call/llm/` | DeepSeek、CallSession、挂断存档 |
 | `daemon/ai_call/stt/sherpa.go` | SenseVoice CLI |
+| `magisk_modules/nexus_runtime/` | 开机自启 + `env.sh` |
 
 ---
 

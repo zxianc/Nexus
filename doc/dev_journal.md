@@ -450,6 +450,38 @@
 - **排障：** Android 上 Go 需自定义 DNS + 加载 `/system/etc/security/cacerts`（否则 lookup/[::1]:53、x509 unknown authority）。
 - **嘟声：** 诊断蜂鸣默认关闭（`TX_BEEP_PREFIX=1` 可开）。
 
+## 2026-07-19 — 按通话 LLM 上下文记忆
+
+- **行为：** 一通电话内累积 user/assistant；请求带完整历史；挂断/新 stream 时 `Reset`。
+- **上限：** 默认最近 24 条非 system（`-llm-max-msgs` / `LLM_MAX_MSGS`）。
+- **竞态：** generation 令牌，避免上一通未完成的回复写进下一通。
+- **为何 24 条：** 通内尽量记，但截断保护 token/延迟/费用；短通话通常用不满；跨通话不保留。
+
+## 2026-07-19 — 通话文本存档落盘；企微/短信/语音 mix 延期
+
+- **做了：** 挂断后等 in-flight → 对话全文 + DeepSeek 摘要 → `/data/vendor/ai_hook/calls/call_*.txt`。
+- **TODO：** 语音 `mix(DL,TTS)` 延期；**企微推送与短信转发同一后续里程碑**（先落盘，后推送）。
+
+## 2026-07-19 — 定稿：三模块命名 + Hook 更名
+
+- **`nexus_audio_hook`：** 原 `ai_audio_hook` 仅改 Magisk id/包名（v2.2）；C++/so 逻辑不动；装前卸载旧模块。
+- **`nexus_runtime` + `nexus_models`：** 程序与模型双包解耦（待实现）。
+- **配置 UI：** 待选 APK / WebUI；可写目录拟 `/data/adb/nexus/`。
+
+## 2026-07-19 — nexus_runtime + nexus_models 模块骨架
+
+- **路径：** `magisk_modules/nexus_runtime`、`magisk_modules/nexus_models`（见该目录 README）。
+- **runtime：** `service.sh` 开机起 engine+ai_call；配置 `/data/adb/nexus/env.sh`；bin/lib **打包前手工填入**（gitignore）。
+- **models：** `models/sense-voice` + `vits-zh-ll` 打包前填入；与 runtime 分 zip。
+- **未做：** 设置 UI；自动从设备拉资产进 zip 的一键脚本可后续加。
+
+## 2026-07-19 — 通话打断 / 边听边答
+
+- **问题：** 首版「每句 OK 都 cancel」会在 LLM 思考阶段被连说「喂」掐死，听不到 `say ok`。
+- **现行：** `replyScheduler` — 启动防抖（`LLM_REPLY_DEBOUNCE_MS`，默认 600ms）；思考中新句排队下一轮；**仅 TTS 播放中**可真正打断（`interruptTX` + cancel）。
+- **开关：** `LLM_BARGE_IN` / `-llm-barge-in`，**默认关**。开：播报中插话打断；关：播报中也只排队。设备改 `/data/adb/nexus/env.sh` 后重启 `service.sh`。
+- **相关：** `daemon/ai_call/main.go`、`txinject.go`；说明见 `daemon/ai_call/README.md`、`magisk_modules/README.md`。
+
 <!-- 新条目模板（复制到文末填写）：
 
 ## YYYY-MM-DD — 标题

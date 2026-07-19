@@ -1,0 +1,6 @@
+id=nexus_models
+name=Nexus Models
+version=v0.1
+versionCode=1
+author=Nexus
+description=STT/TTS model assets for Nexus. Pair with nexus_runtime. No HAL inject.

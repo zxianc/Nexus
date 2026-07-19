@@ -2,7 +2,7 @@ import os
 import zipfile
 
 root = "out"
-out_zip = "ai_audio_hook_zygisk.zip"
+out_zip = "nexus_audio_hook_zygisk.zip"
 
 with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zf:
     for dp, _, files in os.walk(root):

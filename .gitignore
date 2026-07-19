@@ -19,6 +19,18 @@ tmp/
 daemon/pcm_recv/pcm_recv
 daemon/pcm_recv/pcm_recv.exe
 
+# Magisk business modules: do not commit large binaries / weights
+magisk_modules/**/bin/ai_call
+magisk_modules/**/bin/nexus_engine
+magisk_modules/**/bin/sherpa-onnx-*
+magisk_modules/**/lib/*.so
+magisk_modules/**/models/sense-voice/**
+magisk_modules/**/models/vits-zh-ll/**
+!magisk_modules/**/models/**/README.md
+!magisk_modules/**/bin/README.md
+!magisk_modules/**/lib/README.md
+magisk_modules/**/*.zip
+
 # Magisk staged overlay trees (built native binaries)
 magisk_module/system/
 zygisk_module/out/

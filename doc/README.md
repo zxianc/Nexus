@@ -24,4 +24,4 @@
 
 ## 当前进度一句话
 
-**1.C+1.D+1.D′+1.F+VAD(A) 完成；模块 v2.1 重装后自动注入/UDS 已验。** 下一步：**1.E** TX（`ai_call` 仍手动启）。
+**模块族：** `nexus_audio_hook` + **`nexus_runtime` / `nexus_models` 骨架**（[`magisk_modules/README.md`](../magisk_modules/README.md)）。填入 bin/模型后打包即可装。

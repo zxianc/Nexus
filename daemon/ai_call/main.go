@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -33,6 +34,7 @@ const (
 	defaultEngineBin  = "/data/local/tmp/nexus_stt/nexus_engine"
 	defaultEngineSock = "/data/local/tmp/nexus_stt/engine.sock"
 	defaultLLMKeyFile = "/data/local/tmp/nexus_stt/deepseek.key"
+	defaultArchiveDir = "/data/vendor/ai_hook/calls"
 )
 
 func envOr(key, def string) string {
@@ -57,16 +59,33 @@ func envBool(key string, def bool) bool {
 	}
 }
 
+func envInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	var n int
+	if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+		return def
+	}
+	return n
+}
+
 type ttsOut struct {
 	Bin, Model, TX string
 	Rate, Sid      int
 	Client         *engine.Client // non-nil → resident nexus_engine
+	Speaking       *int32         // >0 while TTS is written / draining on TX
 }
 
 type llmOut struct {
-	Enabled bool
-	Client  *llm.Client
-	System  string
+	Enabled    bool
+	BargeIn    bool // TTS 播放中允许打断；关则排队下一轮
+	Client     *llm.Client
+	System     string
+	Session    *llm.CallSession
+	ArchiveDir string
+	Inflight   *int32 // replyLLM in-flight count; shared
 }
 
 type speakOpts struct {
@@ -82,7 +101,7 @@ func main() {
 	sttBin := flag.String("stt-bin", envOr("STT_BIN", defaultSTTBin), "sherpa-onnx-offline path")
 	modelDir := flag.String("model-dir", envOr("STT_MODEL_DIR", defaultModelDir), "SenseVoice model dir")
 	lang := flag.String("lang", envOr("STT_LANG", "auto"), "sense-voice language: auto|zh|en|ja|ko|yue")
-	queueSize := flag.Int("queue", 2, "async STT queue size")
+	queueSize := flag.Int("queue", 4, "async STT queue size (barge-in friendly)")
 	say := flag.String("say", "", "TTS text → tx_inject.pcm then exit (no UDS)")
 	ttsBin := flag.String("tts-bin", envOr("TTS_BIN", defaultTTSBin), "sherpa-onnx-offline-tts path")
 	ttsModel := flag.String("tts-model", envOr("TTS_MODEL_DIR", defaultTTSModel), "VITS model dir")
@@ -98,6 +117,9 @@ func main() {
 	llmBase := flag.String("llm-base", envOr("DEEPSEEK_BASE", llm.DefaultBaseURL), "DeepSeek API base URL")
 	llmModel := flag.String("llm-model", envOr("DEEPSEEK_MODEL", llm.DefaultModel), "chat model id")
 	llmSystem := flag.String("llm-system", envOr("LLM_SYSTEM", llm.DefaultSystemPrompt), "system prompt")
+	llmMaxMsgs := flag.Int("llm-max-msgs", envInt("LLM_MAX_MSGS", 24), "max call history messages (excl. system)")
+	llmBargeIn := flag.Bool("llm-barge-in", envBool("LLM_BARGE_IN", false), "allow barge-in while TTS plays (else queue next turn)")
+	archiveDir := flag.String("archive-dir", envOr("CALL_ARCHIVE_DIR", defaultArchiveDir), "end-of-call text archive dir")
 	llmPing := flag.Bool("llm-ping", false, "one-shot DeepSeek ping then exit")
 	flag.Parse()
 
@@ -166,15 +188,21 @@ func main() {
 		if err != nil {
 			log.Fatalf("llm: %v", err)
 		}
+		speakN := new(int32)
+		ttsCfg.Speaking = speakN
 		llmCfg = llmOut{
 			Enabled: true,
+			BargeIn: *llmBargeIn,
 			Client: &llm.Client{
 				BaseURL: *llmBase,
 				APIKey:  key,
 				Model:   *llmModel,
 				HTTP:    llm.NewHTTPClient(nil),
 			},
-			System: *llmSystem,
+			System:     *llmSystem,
+			Session:    llm.NewCallSession(*llmMaxMsgs),
+			ArchiveDir: *archiveDir,
+			Inflight:   new(int32),
 		}
 		if *echoTTS {
 			log.Printf("note: -llm overrides -echo-tts")
@@ -186,8 +214,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("backend: %v", err)
 	}
-	log.Printf("ai_call start backend=%s sock=%s stt_log=%s echo_tts=%v llm=%v engine=%v",
-		backend.Name(), *sock, *sttLog, *echoTTS, llmCfg.Enabled, useEngine)
+	log.Printf("ai_call start backend=%s sock=%s stt_log=%s echo_tts=%v llm=%v barge_in=%v engine=%v",
+		backend.Name(), *sock, *sttLog, *echoTTS, llmCfg.Enabled, llmCfg.BargeIn, useEngine)
 
 	logFile, err := os.OpenFile(*sttLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
@@ -222,8 +250,11 @@ func main() {
 			continue
 		}
 		log.Printf("connected to HAL")
-		runStream(ctx, conn, *dump, uttCh)
+		runStream(ctx, conn, *dump, uttCh, llmCfg.Session)
 		_ = conn.Close()
+		if llmCfg.Enabled && llmCfg.Session != nil {
+			finalizeCallArchive(ctx, llmCfg)
+		}
 		log.Printf("disconnected, will reconnect")
 		select {
 		case <-ctx.Done():
@@ -313,6 +344,10 @@ func speakTX(parent context.Context, text string, cfg ttsOut, opts speakOpts) er
 		beep := tonePrefixS16Mono(txRate, 300)
 		pcm = append(beep, pcm...)
 	}
+	if cfg.Speaking != nil {
+		atomic.AddInt32(cfg.Speaking, 1)
+		defer atomic.AddInt32(cfg.Speaking, -1)
+	}
 	if err := writeTXInject(cfg.TX, pcm); err != nil {
 		return err
 	}
@@ -357,6 +392,12 @@ func waitTXPlayed(ctx context.Context, path string, pcmBytes, rate int) {
 }
 
 func sttWorker(ctx context.Context, backend stt.Backend, in <-chan Utterance, logFile *os.File, echo bool, ttsCfg ttsOut, llmCfg llmOut) {
+	var sched replyScheduler
+	if llmCfg.Enabled {
+		sched = newReplyScheduler(ctx, llmCfg, ttsCfg)
+		defer sched.stop()
+	}
+
 	for utt := range in {
 		t0 := time.Now()
 		cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -387,9 +428,7 @@ func sttWorker(ctx context.Context, backend stt.Backend, in <-chan Utterance, lo
 			continue
 		}
 		if llmCfg.Enabled {
-			if err := replyLLM(ctx, text, llmCfg, ttsCfg); err != nil {
-				log.Printf("llm: %v", err)
-			}
+			sched.onUserText(text)
 			continue
 		}
 		if echo {
@@ -401,11 +440,160 @@ func sttWorker(ctx context.Context, backend stt.Backend, in <-chan Utterance, lo
 	}
 }
 
+// replyScheduler: debounce start; barge-in only while TTS is on TX; queue next turn while LLM thinks.
+type replyScheduler struct {
+	parent   context.Context
+	llmCfg   llmOut
+	ttsCfg   ttsOut
+	debounce time.Duration
+
+	mu           sync.Mutex
+	cancel       context.CancelFunc
+	timer        *time.Timer
+	pendingStart string // latest text waiting for debounce → start
+	pendingNext  string // spoken while LLM thinking; run after current finishes
+}
+
+func newReplyScheduler(parent context.Context, llmCfg llmOut, ttsCfg ttsOut) replyScheduler {
+	ms := envInt("LLM_REPLY_DEBOUNCE_MS", 600)
+	if ms < 0 {
+		ms = 0
+	}
+	return replyScheduler{
+		parent:   parent,
+		llmCfg:   llmCfg,
+		ttsCfg:   ttsCfg,
+		debounce: time.Duration(ms) * time.Millisecond,
+	}
+}
+
+func (s *replyScheduler) speaking() bool {
+	return s.ttsCfg.Speaking != nil && atomic.LoadInt32(s.ttsCfg.Speaking) > 0
+}
+
+func (s *replyScheduler) inflight() bool {
+	return s.llmCfg.Inflight != nil && atomic.LoadInt32(s.llmCfg.Inflight) > 0
+}
+
+func (s *replyScheduler) onUserText(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if s.speaking() && s.llmCfg.BargeIn {
+		// True barge-in: cut TX and restart with the new utterance.
+		interruptTX(s.ttsCfg.TX, s.ttsCfg.Rate)
+		s.cancelLocked()
+		s.mu.Lock()
+		s.pendingNext = ""
+		s.mu.Unlock()
+		log.Printf("llm: barge-in (tts playing) text=%q", text)
+		s.armStart(text)
+		return
+	}
+	if s.inflight() || s.speaking() {
+		// Keep current reply audible; queue latest as next turn.
+		s.mu.Lock()
+		s.pendingNext = text
+		s.mu.Unlock()
+		why := "thinking"
+		if s.speaking() {
+			why = "tts playing, barge-in off"
+		}
+		log.Printf("llm: defer next turn (%s) text=%q", why, text)
+		return
+	}
+	s.armStart(text)
+}
+
+func (s *replyScheduler) armStart(text string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pendingStart = text
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	d := s.debounce
+	s.timer = time.AfterFunc(d, func() {
+		s.mu.Lock()
+		t := s.pendingStart
+		s.pendingStart = ""
+		s.timer = nil
+		s.mu.Unlock()
+		if t == "" || s.parent.Err() != nil {
+			return
+		}
+		s.startReply(t)
+	})
+}
+
+func (s *replyScheduler) startReply(text string) {
+	s.mu.Lock()
+	if s.cancel != nil {
+		s.cancel()
+	}
+	ctx, cancel := context.WithCancel(s.parent)
+	s.cancel = cancel
+	s.mu.Unlock()
+
+	go func() {
+		err := replyLLM(ctx, text, s.llmCfg, s.ttsCfg)
+		if err != nil {
+			if ctx.Err() != nil {
+				log.Printf("llm: interrupted (barge-in)")
+			} else {
+				log.Printf("llm: %v", err)
+			}
+		}
+		s.mu.Lock()
+		next := s.pendingNext
+		s.pendingNext = ""
+		s.mu.Unlock()
+		if next != "" && s.parent.Err() == nil && ctx.Err() == nil {
+			log.Printf("llm: start deferred turn text=%q", next)
+			s.armStart(next)
+		}
+	}()
+}
+
+func (s *replyScheduler) cancelLocked() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	s.pendingStart = ""
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
+}
+
+func (s *replyScheduler) stop() {
+	s.cancelLocked()
+	s.mu.Lock()
+	s.pendingNext = ""
+	s.mu.Unlock()
+}
+
 func replyLLM(ctx context.Context, userText string, llmCfg llmOut, ttsCfg ttsOut) error {
+	if llmCfg.Inflight != nil {
+		atomic.AddInt32(llmCfg.Inflight, 1)
+		defer atomic.AddInt32(llmCfg.Inflight, -1)
+	}
 	t0 := time.Now()
-	msgs := []llm.Message{
-		{Role: "system", Content: llmCfg.System},
-		{Role: "user", Content: userText},
+	var gen uint64
+	if llmCfg.Session != nil {
+		gen = llmCfg.Session.Generation()
+		if !llmCfg.Session.AppendUserGen(gen, userText) {
+			return fmt.Errorf("llm: call session reset (dropped turn)")
+		}
+	}
+	msgs := []llm.Message{{Role: "system", Content: llmCfg.System}, {Role: "user", Content: userText}}
+	if llmCfg.Session != nil {
+		msgs = llmCfg.Session.Messages(llmCfg.System)
 	}
 	type streamRes struct {
 		full string
@@ -427,6 +615,9 @@ func replyLLM(ctx context.Context, userText string, llmCfg llmOut, ttsCfg ttsOut
 	first := true
 	beepOn := envBool("TX_BEEP_PREFIX", false)
 	for sentence := range sentCh {
+		if ctx.Err() != nil {
+			break
+		}
 		opts := speakOpts{
 			Beep:      first && beepOn,
 			WaitDrain: true,
@@ -437,14 +628,85 @@ func replyLLM(ctx context.Context, userText string, llmCfg llmOut, ttsCfg ttsOut
 		}
 	}
 	res := <-resCh
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if res.err != nil {
 		return res.err
 	}
-	log.Printf("llm ok rt=%.2fs reply=%q", time.Since(t0).Seconds(), res.full)
+	if llmCfg.Session != nil {
+		llmCfg.Session.AppendAssistantGen(gen, res.full)
+	}
+	turns := 0
+	if llmCfg.Session != nil {
+		turns = llmCfg.Session.Turns()
+	}
+	log.Printf("llm ok rt=%.2fs turns=%d req_msgs=%d reply=%q",
+		time.Since(t0).Seconds(), turns, len(msgs), res.full)
 	return nil
 }
 
-func runStream(ctx context.Context, conn net.Conn, dumpPath string, uttCh chan<- Utterance) {
+// finalizeCallArchive writes transcript + DeepSeek summary to disk, then clears session.
+// WeCom / SMS push is deferred (same future milestone).
+func finalizeCallArchive(parent context.Context, llmCfg llmOut) {
+	// Wait briefly so in-flight STT→LLM→TTS can commit the last turn.
+	deadline := time.Now().Add(90 * time.Second)
+	for llmCfg.Inflight != nil && atomic.LoadInt32(llmCfg.Inflight) > 0 && time.Now().Before(deadline) {
+		if parent.Err() != nil {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	hist := llmCfg.Session.SnapshotAndReset()
+	log.Printf("call session cleared turns=%d", countUserTurns(hist))
+	if len(hist) == 0 {
+		return
+	}
+	started := time.Now()
+	transcript := llm.FormatTranscript(hist)
+	summary := "(摘要生成失败或跳过)"
+	if llmCfg.Client != nil {
+		ctx, cancel := context.WithTimeout(parent, 60*time.Second)
+		defer cancel()
+		s, err := llmCfg.Client.Chat(ctx, []llm.Message{
+			{Role: "system", Content: llm.SummaryPrompt},
+			{Role: "user", Content: transcript},
+		})
+		if err != nil {
+			log.Printf("archive summary: %v", err)
+		} else if strings.TrimSpace(s) != "" {
+			summary = s
+		}
+	}
+	body := llm.BuildCallArchive(started.Format("2006-01-02 15:04:05"), summary, transcript)
+	dir := llmCfg.ArchiveDir
+	if dir == "" {
+		dir = defaultArchiveDir
+	}
+	if err := os.MkdirAll(dir, 0777); err != nil {
+		log.Printf("archive mkdir: %v", err)
+		return
+	}
+	path := filepath.Join(dir, llm.CallArchiveName(started))
+	if err := os.WriteFile(path, []byte(body), 0666); err != nil {
+		log.Printf("archive write: %v", err)
+		return
+	}
+	_ = os.Chmod(path, 0666)
+	log.Printf("call archive ok path=%s bytes=%d summary=%q", path, len(body), summary)
+}
+
+func countUserTurns(hist []llm.Message) int {
+	n := 0
+	for _, m := range hist {
+		if m.Role == "user" {
+			n++
+		}
+	}
+	return n
+}
+
+func runStream(ctx context.Context, conn net.Conn, dumpPath string, uttCh chan<- Utterance, sess *llm.CallSession) {
 	hdr, err := readAPCMHeader(conn)
 	if err != nil {
 		log.Printf("hdr: %v", err)
@@ -452,6 +714,10 @@ func runStream(ctx context.Context, conn net.Conn, dumpPath string, uttCh chan<-
 	}
 	log.Printf("stream start rate=%d ch=%d bits=%d kind=%s(%d)",
 		hdr.Rate, hdr.Channels, hdr.Bits, kindName(hdr.Kind), hdr.Kind)
+	if sess != nil {
+		sess.Reset()
+		log.Printf("call session start (context memory on)")
+	}
 	clearTXInject(defaultTXInject) // drop stale clip from previous offline -say
 
 	var dump *os.File
