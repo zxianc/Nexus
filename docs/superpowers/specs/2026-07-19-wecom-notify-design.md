@@ -27,10 +27,11 @@
 | 项 | 决定 |
 |----|------|
 | 通道 | 企微外部联系人消息（用户企业已注册） |
-| 形态 | 独立进程 `nexus_notify`，进 `nexus_runtime` |
+| 形态 | **独立进程 `nexus_notify`**（不并入 `nexus_callpolicy`：隔离企微/短信与接听策略；可单独升级） |
 | 通话 | 挂断落盘后推送（接现有 `finalizeCallArchive`） |
 | 短信 | **双卡都转发** |
 | 配置 | `/data/adb/nexus/config.json` → `notify`；密钥勿提交 git |
+| 群机器人 | 预留 `webhook_url`，后续扩展 |
 
 ## 4. 架构
 
