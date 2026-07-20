@@ -134,6 +134,9 @@ static std::atomic<int> g_pcm_w{0}, g_pcm_r{0};
 static std::atomic<bool> g_ai_mute_mic{false};
 static std::atomic<void *> g_dl_rec_pcm{nullptr};
 static std::atomic<void *> g_voice_ul_pcm{nullptr};
+// UDS client fd (declared early — frame parser / accept paths use it).
+static std::atomic<int> g_uds_client{-1};
+static std::atomic<bool> g_uds_hdr_sent{false};
 
 static bool is_voice_ul_mic(void *pcm) {
     if (pcm == nullptr) {
@@ -508,10 +511,7 @@ static int open_dump_fd() {
     return -1;
 }
 
-// 1.D: HAL is UDS server; Go pcm_recv connects as client (avoids magisk connect denials).
-static std::atomic<int> g_uds_client{-1};
-static std::atomic<bool> g_uds_hdr_sent{false};
-
+// 1.D: HAL is UDS server; Go pcm_recv / App connect as clients.
 static void put_u32_le(unsigned char *p, unsigned v) {
     p[0] = (unsigned char)(v);
     p[1] = (unsigned char)(v >> 8);
