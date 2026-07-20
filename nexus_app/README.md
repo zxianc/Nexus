@@ -2,15 +2,16 @@
 
 Kotlin sources for the App-side of the Zygisk ↔ App architecture.
 
-## Current build mode (dev host)
+## Build
 
-This tree builds as **Kotlin JVM** (`org.jetbrains.kotlin.jvm`) so protocol/config unit tests run without an Android SDK:
+SDK path is in `local.properties` (gitignored). On this machine: `E:\Android\Sdk`.
 
 ```bat
 gradlew.bat :app:test
+gradlew.bat :app:assembleDebug
 ```
 
-`app/src/androidMain/` holds Android-only types (`LocalSocket`, Activities). Switch `:app` to `com.android.application` (AGP) on a machine with Android SDK, and add `androidMain` to the Android source sets / Manifest.
+`app/src/androidMain/` is merged into the main Android source set (LocalSocket / SmokeActivity).
 
 ## Layout
 
