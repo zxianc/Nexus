@@ -37,6 +37,7 @@ class SmokeActivity : Activity() {
             try {
                 append("connecting...")
                 client.connect()
+                append("connected via ${client.connectedVia}")
                 append("waiting APCM (start an AI/test call if needed)...")
                 val hdr = client.readApcmHeader(60_000)
                 append("APCM rate=${hdr.rate} ch=${hdr.channels} bits=${hdr.bits} kind=${hdr.kind}")

@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -24,6 +25,8 @@
 #endif
 
 #define PCM_SOCK_PATH "/data/vendor/ai_hook/pcm.sock"
+/* Abstract UDS name (no leading @ in C; sun_path[0]=0). App uses Namespace.ABSTRACT. */
+#define PCM_SOCK_ABSTRACT "nexus_pcm"
 #define TX_INJECT_PATH "/data/vendor/ai_hook/tx_inject.pcm"
 #define TX_TONE_PATH "/data/vendor/ai_hook/tx_tone"
 #define APCM_MAGIC 0x4D435041u /* 'APCM' LE */
@@ -567,28 +570,22 @@ static bool uds_send_hdr_if_needed(int fd, unsigned rate, unsigned channels, uns
     return true;
 }
 
-static void *uds_server_thread(void *) {
-    unlink(PCM_SOCK_PATH);
-    int listen_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (listen_fd < 0) {
-        LOGI("uds listen socket errno=%d", errno);
-        return nullptr;
+static void uds_on_accept(int cfd) {
+    int flags = fcntl(cfd, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(cfd, F_SETFL, flags | O_NONBLOCK);
     }
-    struct sockaddr_un addr {};
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, PCM_SOCK_PATH, sizeof(addr.sun_path) - 1);
-    if (bind(listen_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        LOGI("uds bind(%s) errno=%d", PCM_SOCK_PATH, errno);
-        close(listen_fd);
-        return nullptr;
+    int old = g_uds_client.exchange(cfd);
+    g_uds_hdr_sent.store(false);
+    g_ai_mute_mic.store(false);
+    if (old >= 0) {
+        close(old);
     }
-    chmod(PCM_SOCK_PATH, 0666);
-    if (listen(listen_fd, 2) != 0) {
-        LOGI("uds listen errno=%d", errno);
-        close(listen_fd);
-        return nullptr;
-    }
-    LOGI("uds server listening on %s", PCM_SOCK_PATH);
+    LOGI("uds client accepted fd=%d", cfd);
+}
+
+static void *uds_accept_loop(void *arg) {
+    int listen_fd = (int)(intptr_t)arg;
     while (true) {
         int cfd = accept(listen_fd, nullptr, nullptr);
         if (cfd < 0) {
@@ -598,19 +595,62 @@ static void *uds_server_thread(void *) {
             LOGI("uds accept errno=%d", errno);
             break;
         }
-        int flags = fcntl(cfd, F_GETFL, 0);
-        if (flags >= 0) {
-            fcntl(cfd, F_SETFL, flags | O_NONBLOCK);
-        }
-        int old = g_uds_client.exchange(cfd);
-        g_uds_hdr_sent.store(false);
-        g_ai_mute_mic.store(false);
-        if (old >= 0) {
-            close(old);
-        }
-        LOGI("uds client accepted fd=%d", cfd);
+        uds_on_accept(cfd);
     }
     close(listen_fd);
+    return nullptr;
+}
+
+static void *uds_server_thread(void *) {
+    // 1) Filesystem sock — Go/ai_call transitional clients
+    unlink(PCM_SOCK_PATH);
+    int fs_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fs_fd >= 0) {
+        struct sockaddr_un addr {};
+        addr.sun_family = AF_UNIX;
+        strncpy(addr.sun_path, PCM_SOCK_PATH, sizeof(addr.sun_path) - 1);
+        if (bind(fs_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+            chmod(PCM_SOCK_PATH, 0666);
+            if (listen(fs_fd, 2) == 0) {
+                LOGI("uds listening filesystem %s", PCM_SOCK_PATH);
+                pthread_t t;
+                pthread_create(&t, nullptr, uds_accept_loop, (void *)(intptr_t)fs_fd);
+                pthread_detach(t);
+                fs_fd = -1; // owned by accept loop
+            } else {
+                LOGI("uds fs listen errno=%d", errno);
+                close(fs_fd);
+            }
+        } else {
+            LOGI("uds fs bind(%s) errno=%d", PCM_SOCK_PATH, errno);
+            close(fs_fd);
+        }
+    }
+
+    // 2) Abstract sock — App (avoids vendor_data_file sock_file write)
+    int abs_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (abs_fd < 0) {
+        LOGI("uds abstract socket errno=%d", errno);
+        return nullptr;
+    }
+    struct sockaddr_un aaddr {};
+    aaddr.sun_family = AF_UNIX;
+    aaddr.sun_path[0] = '\0';
+    strncpy(aaddr.sun_path + 1, PCM_SOCK_ABSTRACT, sizeof(aaddr.sun_path) - 2);
+    socklen_t alen =
+        (socklen_t)(offsetof(struct sockaddr_un, sun_path) + 1 + strlen(PCM_SOCK_ABSTRACT));
+    if (bind(abs_fd, (struct sockaddr *)&aaddr, alen) != 0) {
+        LOGI("uds abstract bind(@%s) errno=%d", PCM_SOCK_ABSTRACT, errno);
+        close(abs_fd);
+        return nullptr;
+    }
+    if (listen(abs_fd, 2) != 0) {
+        LOGI("uds abstract listen errno=%d", errno);
+        close(abs_fd);
+        return nullptr;
+    }
+    LOGI("uds listening abstract @%s", PCM_SOCK_ABSTRACT);
+    uds_accept_loop((void *)(intptr_t)abs_fd);
     return nullptr;
 }
 

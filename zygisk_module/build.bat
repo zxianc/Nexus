@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-set "ANDROID_SDK=E:\android\SDK"
+set "ANDROID_SDK=E:\Android\Sdk"
 set "NDK_PATH=%ANDROID_SDK%\ndk\30.0.15729638"
 set "CMAKE_BIN=%ANDROID_SDK%\cmake\4.1.2\bin"
 set "TOOLCHAIN=%NDK_PATH%\build\cmake\android.toolchain.cmake"

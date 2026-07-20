@@ -2,6 +2,7 @@ package com.nexus.assistant.uds
 
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
+import android.util.Log
 import com.nexus.assistant.protocol.ApcmHeader
 import com.nexus.assistant.protocol.FrameReader
 import com.nexus.assistant.protocol.PcmProtocol
@@ -9,19 +10,46 @@ import com.nexus.assistant.protocol.ProtocolException
 import java.io.InputStream
 
 /**
- * Android LocalSocket client for framed pcm.sock.
- * Lives under androidMain — compile with AGP when Android SDK is available.
+ * Framed UDS client. Prefers abstract `@nexus_pcm` (avoids vendor sock_file SELinux);
+ * falls back to filesystem path for older HAL builds.
  */
 class PcmSocketClient(
-    private val path: String = "/data/vendor/ai_hook/pcm.sock",
+    private val filesystemPath: String = "/data/vendor/ai_hook/pcm.sock",
+    private val abstractName: String = "nexus_pcm",
 ) {
     private var socket: LocalSocket? = null
     val reader = FrameReader()
 
+    /** How the last connect succeeded (for smoke UI / logs). */
+    var connectedVia: String = ""
+        private set
+
     fun connect() {
-        val s = LocalSocket()
-        s.connect(LocalSocketAddress(path, LocalSocketAddress.Namespace.FILESYSTEM))
-        socket = s
+        val abstractErr: Exception?
+        try {
+            val s = LocalSocket()
+            s.connect(LocalSocketAddress(abstractName, LocalSocketAddress.Namespace.ABSTRACT))
+            socket = s
+            connectedVia = "abstract:@$abstractName"
+            Log.i(TAG, "connected via $connectedVia")
+            return
+        } catch (e: Exception) {
+            abstractErr = e
+            Log.w(TAG, "abstract connect failed, try filesystem", e)
+        }
+        try {
+            val s = LocalSocket()
+            s.connect(
+                LocalSocketAddress(filesystemPath, LocalSocketAddress.Namespace.FILESYSTEM),
+            )
+            socket = s
+            connectedVia = "filesystem:$filesystemPath"
+            Log.i(TAG, "connected via $connectedVia")
+        } catch (e: Exception) {
+            throw ProtocolException(
+                "UDS connect failed (abstract: ${abstractErr?.message}; fs: ${e.message})",
+            )
+        }
     }
 
     fun readApcmHeader(timeoutMs: Long): ApcmHeader {
@@ -71,5 +99,9 @@ class PcmSocketClient(
         } catch (_: Exception) {
         }
         socket = null
+    }
+
+    companion object {
+        private const val TAG = "PcmSocketClient"
     }
 }

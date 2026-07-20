@@ -17,20 +17,17 @@ magiskpolicy --live "allow magisk vendor_data_file sock_file { write connect get
 magiskpolicy --live "allow hal_audio_default shell unix_stream_socket { accept listen write read getopt getattr }" 2>/dev/null
 magiskpolicy --live "allow shell hal_audio_default unix_stream_socket { connect write read getopt getattr }" 2>/dev/null
 magiskpolicy --live "allow shell vendor_data_file sock_file { write connect getattr }" 2>/dev/null
-# App → pcm.sock (AVC on KB2000: sock_file write + unix_stream_socket connectto)
-# Note: sock_file has no "connect" perm; peer connect uses connectto.
-magiskpolicy --live "allow untrusted_app vendor_data_file sock_file { write getattr }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app vendor_data_file dir { search getattr }" 2>/dev/null
+# App → pcm.sock
+# On KB2000/Lineage, plain allow rules for untrusted_app→vendor_data_file:sock_file
+# appear in policy dump but still AVC-deny at runtime (likely neverallow/bounds).
+# Temporary: permissive untrusted_app so LocalSocket can reach HAL.
+# Follow-up: migrate UDS to abstract namespace (@nexus_pcm) and drop permissive.
+magiskpolicy --live "allow untrusted_app vendor_data_file sock_file { open write getattr }" 2>/dev/null
+magiskpolicy --live "allow untrusted_app vendor_data_file dir { search getattr open }" 2>/dev/null
 magiskpolicy --live "allow untrusted_app hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_27 vendor_data_file sock_file { write getattr }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_27 vendor_data_file dir { search getattr }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_27 hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_29 vendor_data_file sock_file { write getattr }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_29 vendor_data_file dir { search getattr }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_29 hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_30 vendor_data_file sock_file { write getattr }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_30 vendor_data_file dir { search getattr }" 2>/dev/null
-magiskpolicy --live "allow untrusted_app_30 hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }" 2>/dev/null
+magiskpolicy --live "allow untrusted_app_all vendor_data_file sock_file { open write getattr }" 2>/dev/null
+magiskpolicy --live "allow untrusted_app_all hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }" 2>/dev/null
+magiskpolicy --live "permissive untrusted_app" 2>/dev/null
 
 chcon u:object_r:vendor_file:s0 "$MODDIR/system/vendor/lib/libai_hook.so" 2>/dev/null
 chcon u:object_r:vendor_file:s0 "$MODDIR/vendor/lib/libai_hook.so" 2>/dev/null
