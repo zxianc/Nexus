@@ -19,6 +19,9 @@
 #ifndef NEXUS_UDS_FRAMED
 #define NEXUS_UDS_FRAMED 1
 #endif
+#ifndef NEXUS_TX_INJECT_FILE
+#define NEXUS_TX_INJECT_FILE 0
+#endif
 
 #define PCM_SOCK_PATH "/data/vendor/ai_hook/pcm.sock"
 #define TX_INJECT_PATH "/data/vendor/ai_hook/tx_inject.pcm"
@@ -125,6 +128,25 @@ static std::atomic<unsigned> g_vsid{VOICE_VSID_DEFAULT};
 static pcm_io_fn_t orig_pcm_write = nullptr;
 static pcm_io_fn_t orig_pcm_read = nullptr;
 static std::atomic<int> g_pcm_w{0}, g_pcm_r{0};
+static std::atomic<bool> g_ai_mute_mic{false};
+static std::atomic<void *> g_dl_rec_pcm{nullptr};
+static std::atomic<void *> g_voice_ul_pcm{nullptr};
+
+static bool is_voice_ul_mic(void *pcm) {
+    if (pcm == nullptr) {
+        return false;
+    }
+    void *dl = g_dl_rec_pcm.load();
+    if (dl != nullptr && pcm == dl) {
+        return false;
+    }
+    void *ul = g_voice_ul_pcm.load();
+    if (ul != nullptr) {
+        return pcm == ul;
+    }
+    // Unknown handle: do not mute (avoid breaking non-call capture).
+    return false;
+}
 
 static int fake_pcm_write(void *pcm, void *data, unsigned int count) {
     int rc = orig_pcm_write(pcm, data, count);
@@ -133,6 +155,9 @@ static int fake_pcm_write(void *pcm, void *data, unsigned int count) {
 }
 static int fake_pcm_read(void *pcm, void *data, unsigned int count) {
     int rc = orig_pcm_read(pcm, data, count);
+    if (g_ai_mute_mic.load() && rc >= 0 && data != nullptr && is_voice_ul_mic(pcm)) {
+        memset(data, 0, count);
+    }
     log_count("pcm_read", g_pcm_r, count, rc);
     return rc;
 }
@@ -304,6 +329,163 @@ static bool txq_pull(TxInjectQ *q, void *dst, size_t need) {
     return true;
 }
 
+static void txq_append(TxInjectQ *q, const void *src, size_t n) {
+    if (!q || !src || n == 0) {
+        return;
+    }
+    pthread_mutex_lock(&q->mu);
+    size_t remain = (q->off < q->len) ? (q->len - q->off) : 0;
+    size_t new_len = remain + n;
+    auto *buf = (unsigned char *)malloc(new_len);
+    if (!buf) {
+        pthread_mutex_unlock(&q->mu);
+        return;
+    }
+    if (remain > 0) {
+        memcpy(buf, q->data + q->off, remain);
+    }
+    memcpy(buf + remain, src, n);
+    free(q->data);
+    q->data = buf;
+    q->len = new_len;
+    q->off = 0;
+    pthread_mutex_unlock(&q->mu);
+}
+
+struct UdsFrameParser {
+    uint8_t hdr[4] {};
+    size_t hdr_have = 0;
+    uint8_t *payload = nullptr;
+    size_t need = 0;
+    size_t got = 0;
+};
+
+static void uds_parser_reset(UdsFrameParser *p) {
+    free(p->payload);
+    p->payload = nullptr;
+    p->hdr_have = 0;
+    p->need = 0;
+    p->got = 0;
+}
+
+static void uds_drop_client(int fd, TxInjectQ *inj) {
+    int cur = g_uds_client.load();
+    if (cur == fd && g_uds_client.compare_exchange_strong(cur, -1)) {
+        close(fd);
+        g_uds_hdr_sent.store(false);
+    }
+    g_ai_mute_mic.store(false);
+    if (inj) {
+        pthread_mutex_lock(&inj->mu);
+        txq_clear_locked(inj);
+        pthread_mutex_unlock(&inj->mu);
+    }
+}
+
+static void uds_dispatch_frame(uint8_t type, const uint8_t *payload, size_t len, TxInjectQ *inj) {
+    switch (type) {
+    case kTypePcmUl:
+        txq_append(inj, payload, len);
+        break;
+    case kTypeCtrlMute:
+        g_ai_mute_mic.store(len > 0 && payload[0] != 0);
+        LOGI("CTRL_MUTE %d", (int)g_ai_mute_mic.load());
+        break;
+    case kTypeCtrlFlushUl:
+        pthread_mutex_lock(&inj->mu);
+        txq_clear_locked(inj);
+        pthread_mutex_unlock(&inj->mu);
+        LOGI("CTRL_FLUSH_UL");
+        break;
+    case kTypeCtrlSession:
+        if (len > 0 && payload[0] == 0) {
+            g_ai_mute_mic.store(false);
+            pthread_mutex_lock(&inj->mu);
+            txq_clear_locked(inj);
+            pthread_mutex_unlock(&inj->mu);
+        }
+        LOGI("CTRL_SESSION %d", len > 0 ? (int)payload[0] : -1);
+        break;
+    default:
+        LOGI("UDS ignore type=0x%02x len=%zu", type, len);
+        break;
+    }
+}
+
+static void uds_feed_bytes(UdsFrameParser *p, const uint8_t *data, size_t n, TxInjectQ *inj) {
+    size_t i = 0;
+    while (i < n) {
+        if (p->payload == nullptr) {
+            while (i < n && p->hdr_have < 4) {
+                p->hdr[p->hdr_have++] = data[i++];
+            }
+            if (p->hdr_have < 4) {
+                return;
+            }
+            p->need = (size_t)p->hdr[2] | ((size_t)p->hdr[3] << 8);
+            if (p->need > kMaxFramePayload) {
+                LOGI("UDS frame len too large %zu", p->need);
+                uds_parser_reset(p);
+                return;
+            }
+            p->got = 0;
+            if (p->need == 0) {
+                uds_dispatch_frame(p->hdr[0], nullptr, 0, inj);
+                p->hdr_have = 0;
+                continue;
+            }
+            p->payload = (uint8_t *)malloc(p->need);
+            if (!p->payload) {
+                uds_parser_reset(p);
+                return;
+            }
+        }
+        size_t take = p->need - p->got;
+        if (take > n - i) {
+            take = n - i;
+        }
+        memcpy(p->payload + p->got, data + i, take);
+        p->got += take;
+        i += take;
+        if (p->got == p->need) {
+            uds_dispatch_frame(p->hdr[0], p->payload, p->need, inj);
+            free(p->payload);
+            p->payload = nullptr;
+            p->hdr_have = 0;
+            p->need = 0;
+            p->got = 0;
+        }
+    }
+}
+
+static void uds_poll_client_frames(UdsFrameParser *parser, TxInjectQ *inj) {
+    int fd = g_uds_client.load();
+    if (fd < 0 || !inj) {
+        return;
+    }
+    uint8_t tmp[4096];
+    for (;;) {
+        ssize_t r = recv(fd, tmp, sizeof(tmp), MSG_DONTWAIT);
+        if (r > 0) {
+            uds_feed_bytes(parser, tmp, (size_t)r, inj);
+            continue;
+        }
+        if (r == 0) {
+            LOGI("uds client closed fd=%d", fd);
+            uds_drop_client(fd, inj);
+            uds_parser_reset(parser);
+            break;
+        }
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+            break;
+        }
+        LOGI("uds recv fail errno=%d", errno);
+        uds_drop_client(fd, inj);
+        uds_parser_reset(parser);
+        break;
+    }
+}
+
 static int open_dump_fd() {
     // Prefer vendor_data_file path; HAL needs sepolicy allow (see sepolicy.rule).
     const char *paths[] = {"/data/vendor/ai_hook/ai_dl.pcm", "/data/vendor/ai_hook/ai_incall.pcm",
@@ -422,6 +604,7 @@ static void *uds_server_thread(void *) {
         }
         int old = g_uds_client.exchange(cfd);
         g_uds_hdr_sent.store(false);
+        g_ai_mute_mic.store(false);
         if (old >= 0) {
             close(old);
         }
@@ -512,6 +695,7 @@ static void *round7_incall_thread(void *) {
         return nullptr;
     }
     LOGI("1.D' pcm READY d23 %uHz ch%u (DL-only)", cfg.rate, cfg.channels);
+    g_dl_rec_pcm.store(pcm);
     if (pcm_start) {
         LOGI("Round-7 pcm_start rc=%d", pcm_start(pcm));
     }
@@ -520,6 +704,10 @@ static void *round7_incall_thread(void *) {
     unsigned bytes = cfg.period_size * cfg.channels * 2;
     void *buf = malloc(bytes);
     if (!buf) {
+        {
+            void *expected = pcm;
+            g_dl_rec_pcm.compare_exchange_strong(expected, nullptr);
+        }
         if (dump_fd >= 0) {
             close(dump_fd);
         }
@@ -590,6 +778,10 @@ static void *round7_incall_thread(void *) {
 
     LOGI("1.D' DL DONE hits=%d nz=%d maxL=%d maxR=%d dumped=%zu uds=%zu rate=%u ch=2 s16le", hits,
          nonzero, max_l, max_r, total_bytes, uds_bytes, cfg.rate);
+    {
+        void *expected = pcm;
+        g_dl_rec_pcm.compare_exchange_strong(expected, nullptr);
+    }
     if (dump_fd >= 0) {
         close(dump_fd);
     }
@@ -699,16 +891,20 @@ static void *tx_incall_music_thread(void *) {
 
     TxInjectQ inj {};
     txq_init(&inj);
+    UdsFrameParser parser {};
     double phase = 0;
     int hits = 0;
     size_t total = 0;
     size_t audible = 0; // non-silence periods
-    LOGI("1.E TX mode: silence keepalive; inject=%s tone_flag=%s", TX_INJECT_PATH, TX_TONE_PATH);
+    LOGI("1.E TX mode: framed UDS UL; file_inject=%d tone_flag=%s", NEXUS_TX_INJECT_FILE, TX_TONE_PATH);
 
     while (g_in_voice.load()) {
+#if NEXUS_TX_INJECT_FILE
         if ((hits % 25) == 0) {
             txq_try_load_file(&inj);
         }
+#endif
+        uds_poll_client_frames(&parser, &inj);
         bool tone = (access(TX_TONE_PATH, F_OK) == 0);
         bool got = false;
         if (tone) {
@@ -737,6 +933,8 @@ static void *tx_incall_music_thread(void *) {
     }
 
     LOGI("1.E TX DONE hits=%d written=%zu audible_periods=%zu", hits, total, audible);
+    uds_parser_reset(&parser);
+    g_ai_mute_mic.store(false);
     txq_destroy(&inj);
     free(buf);
     pcm_close(pcm);
@@ -814,12 +1012,35 @@ static int fake_start_in(void *s) {
     return orig_start_in(s);
 }
 
+static pcm_open_fn_t orig_pcm_open = nullptr;
+static void *fake_pcm_open(unsigned int card, unsigned int device, unsigned int flags,
+                           const struct pcm_config *config) {
+    void *pcm = orig_pcm_open(card, device, flags, config);
+    if (pcm && g_in_voice.load() && (flags & PCM_IN) && device != 23) {
+        // Heuristic: first non-DL (d23) capture during a call is treated as UL mic.
+        void *expected = nullptr;
+        if (g_voice_ul_pcm.compare_exchange_strong(expected, pcm)) {
+            LOGI("track voice UL mic pcm=%p card=%u dev=%u", pcm, card, device);
+        }
+    }
+    return pcm;
+}
+
+static pcm_close_fn_t orig_pcm_close = nullptr;
+static int fake_pcm_close(void *pcm) {
+    void *ul = pcm;
+    g_voice_ul_pcm.compare_exchange_strong(ul, nullptr);
+    return orig_pcm_close(pcm);
+}
+
 static void install_hooks() {
     const char *tiny = "libtinyalsa.so";
     const char *prim = "audio.primary.kona.so";
 
     hook_addr("pcm_write", resolve_sym(tiny, "pcm_write"), (void *)fake_pcm_write, (void **)&orig_pcm_write);
     hook_addr("pcm_read", resolve_sym(tiny, "pcm_read"), (void *)fake_pcm_read, (void **)&orig_pcm_read);
+    hook_addr("pcm_open", resolve_sym(tiny, "pcm_open"), (void *)fake_pcm_open, (void **)&orig_pcm_open);
+    hook_addr("pcm_close", resolve_sym(tiny, "pcm_close"), (void *)fake_pcm_close, (void **)&orig_pcm_close);
 
     hook_addr("voice_start_call", resolve_sym(prim, "voice_start_call"), (void *)fake_voice_start_call,
               (void **)&orig_voice_start_call);
@@ -847,7 +1068,7 @@ static void install_hooks() {
     fn_voice_sid = (voice_sid_fn_t)resolve_sym(prim, "voice_get_active_session_id");
 
     start_uds_server();
-    LOGI("HAL 1.D'+1.E hooks done (DL UDS + TX silence/inject) sock=%s", PCM_SOCK_PATH);
+    LOGI("HAL 1.D'+1.E hooks done (framed UDS DL/UL + soft-mute) sock=%s", PCM_SOCK_PATH);
 }
 
 static void *main_thread(void *) {
