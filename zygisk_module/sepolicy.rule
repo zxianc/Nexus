@@ -19,3 +19,16 @@ allow hal_audio_default shell unix_stream_socket { accept listen write read geto
 allow shell hal_audio_default unix_stream_socket { connect write read getopt getattr }
 allow shell vendor_data_file dir { search getattr }
 allow shell vendor_data_file sock_file { write getattr }
+# Nexus Assistant App → pcm.sock
+allow untrusted_app vendor_data_file dir { search getattr }
+allow untrusted_app vendor_data_file sock_file { write getattr }
+allow untrusted_app hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }
+allow untrusted_app_27 vendor_data_file dir { search getattr }
+allow untrusted_app_27 vendor_data_file sock_file { write getattr }
+allow untrusted_app_27 hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }
+allow untrusted_app_29 vendor_data_file dir { search getattr }
+allow untrusted_app_29 vendor_data_file sock_file { write getattr }
+allow untrusted_app_29 hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }
+allow untrusted_app_30 vendor_data_file dir { search getattr }
+allow untrusted_app_30 vendor_data_file sock_file { write getattr }
+allow untrusted_app_30 hal_audio_default unix_stream_socket { connectto write read getopt getattr setopt }
