@@ -14,6 +14,11 @@
 #include <cstring>
 
 #include "dobby.h"
+#include "pcm_frame.h"
+
+#ifndef NEXUS_UDS_FRAMED
+#define NEXUS_UDS_FRAMED 1
+#endif
 
 #define PCM_SOCK_PATH "/data/vendor/ai_hook/pcm.sock"
 #define TX_INJECT_PATH "/data/vendor/ai_hook/tx_inject.pcm"
@@ -542,7 +547,19 @@ static void *round7_incall_thread(void *) {
         }
         int uds_fd = g_uds_client.load();
         if (uds_fd >= 0 && uds_send_hdr_if_needed(uds_fd, cfg.rate, cfg.channels, APCM_KIND_DL)) {
+#if NEXUS_UDS_FRAMED
+            size_t frame_cap = 4 + (size_t)bytes;
+            auto *frame = (uint8_t *)malloc(frame_cap);
+            if (frame) {
+                ssize_t n = pcm_frame_encode(kTypePcmDl, 0, buf, (size_t)bytes, frame, frame_cap);
+                if (n > 0) {
+                    uds_bytes += uds_send_all(uds_fd, frame, (size_t)n);
+                }
+                free(frame);
+            }
+#else
             uds_bytes += uds_send_all(uds_fd, buf, bytes);
+#endif
         }
         auto *p = (const int16_t *)buf;
         int frames = (int)(bytes / 4); // stereo s16
