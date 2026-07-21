@@ -20,6 +20,11 @@
 #ifndef NEXUS_UDS_FRAMED
 #define NEXUS_UDS_FRAMED 1
 #endif
+/*
+ * File TX inject (tx_inject.pcm) is RETIRED as the primary path.
+ * App injects PCM_UL frames over UDS. Keep the loader behind this macro only
+ * for emergency rollback builds (NEXUS_TX_INJECT_FILE=1); never enable by default.
+ */
 #ifndef NEXUS_TX_INJECT_FILE
 #define NEXUS_TX_INJECT_FILE 0
 #endif

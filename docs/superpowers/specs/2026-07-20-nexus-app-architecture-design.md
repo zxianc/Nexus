@@ -1,8 +1,9 @@
 # Nexus 全新架构设计方案：Zygisk 旁路 + 纯 Android Native App 闭环
 
 **日期：** 2026-07-20  
-**修订：** 2026-07-22（Webhook 内存发送+重试；call.json；SMS_RECEIVED；本机收件行）  
-**状态：** Draft（产品项已拍板；实现计划见 `docs/superpowers/plans/2026-07-20-nexus-app-architecture.md`）  
+**修订：** 2026-07-22（G3 完成；M5：`tx_inject` 主路径退役）  
+**状态：** Implemented-in-progress（G3 已标记；2b 软静音 Deferred）  
+
 **特性分支：** `nexus_app_architecture`
 
 ---

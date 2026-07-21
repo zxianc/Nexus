@@ -76,8 +76,10 @@ Webhook 正文标明：
 
 一次性从旧 Magisk 配置迁移：`nexus_app/scripts/migrate_magisk_config_once.py`。
 
+**TX 路径：** App → UDS `PCM_UL`（**不用** `tx_inject.pcm`；HAL 文件注入宏默认关）。
+
 **仍 TODO：**
 - **AI 接听静麦保 TX**（kona：勿用系统静音 / 勿清 `TX_AIF1_CAP Mixer DEC*`；详见 architecture plan Deferred TODO）
-- Task 15：清理 `tx_inject.pcm` 主路径（可选）
 
-**G3：** 2026-07-22 已标记完成（遇问题再修）；见 [验收清单](../docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md)。
+**G3：** 2026-07-22 已标记完成（遇问题再修）；见 [验收清单](../docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md)。  
+**M5 / Task 15：** `tx_inject.pcm` 主路径已退役（宏保留紧急回滚）。

@@ -1,12 +1,13 @@
-# Nexus 现行实现：技术方案 / 数据流 / 线程模型
+# Nexus 实现细节：HAL / 历史 Go 数据流 / 线程模型
 
-**日期：** 2026-07-19  
-**对应进度：** 1.A～1.F、DeepSeek 闭环 + 通内上下文 + **文本存档落盘 ✅**；**企微 Webhook + 双卡短信 ✅**（`nexus_notify`）；**语音 mix 仍 TODO**
+**日期：** 2026-07-19（正文多为 Go 时代）  
+**2026-07-22 说明：** 业务已迁入 App；现行总览见 [`00_framework_overview.md`](00_framework_overview.md)。  
+**TX：** App 用 UDS `PCM_UL`；`tx_inject.pcm` 不再作为主路径（HAL `NEXUS_TX_INJECT_FILE=0`）。下文 `tx_inject` / `ai_call` 描述保留作历史对照。
+
 **目标机：** OnePlus 8T / 骁龙 865 / LineageOS + Magisk Zygisk  
-**模块版本：** `nexus_audio_hook` **v2.2**（versionCode=4；原 `ai_audio_hook`）
+**模块：** `nexus_audio_hook`（Zygisk）
 
-**框架总览（进程速查）：** [`00_framework_overview.md`](00_framework_overview.md)  
-**相关文档：** [`plan.md`](plan.md)（总方案）· [`dev_journal.md`](dev_journal.md)（过程）· [`03_pcm_hook_next.md`](03_pcm_hook_next.md)（下一里程碑）· [`daemon/ai_call/README.md`](../daemon/ai_call/README.md)
+**相关：** [`plan.md`](plan.md) · [`dev_journal.md`](dev_journal.md) · [`daemon/ai_call/README.md`](../daemon/ai_call/README.md)（历史）
 
 ---
 

@@ -897,13 +897,14 @@ git commit -m "feat(app): minimal dialer and InCallService"
 ### Task 15: M5 — 清理 tx_inject 主路径与文档
 
 **Files:**
-- Modify: `audio_hook_hal.cpp` — 删除或永久禁用 `txq_try_load_file` 主路径（保留宏一版）
-- Modify: `magisk_modules/README.md`、`doc/04_architecture_runtime.md`（或加新 overview）
-- Update: design spec 状态 → `Accepted` / Implemented-in-progress
+- `audio_hook_hal.cpp` — `NEXUS_TX_INJECT_FILE=0`（主路径关；宏保留紧急回滚）
+- `zygisk_module/doc/README.md`、`doc/00_framework_overview.md`、`doc/04_architecture_runtime.md` 头注
 
-- [ ] **Step 1: 确认无任何客户端再写 `tx_inject.pcm`**  
-- [ ] **Step 2: 文档与模块 README 对齐**  
-- [ ] **Step 3: Commit** `chore: retire tx_inject.pcm primary path and update docs`
+**确认：** App 仅 UDS `PCM_UL`；`daemon/ai_call` 仍可写 `tx_inject` 但默认不装机。
+
+- [x] **Step 1: 确认 App 不写 `tx_inject.pcm`；HAL 默认不轮询文件**  
+- [x] **Step 2: 文档与 Zygisk README 对齐**  
+- [x] **Step 3: Commit** `chore: retire tx_inject.pcm primary path and update docs`
 
 ---
 

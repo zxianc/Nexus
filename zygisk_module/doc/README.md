@@ -12,9 +12,9 @@
 3. **通话 PCM：** incall-rec（`pcm_read` card0 **device 23** @ 48kHz s16le）
    - **已验证：** UL+DL 混合（听验/人模式存档）
    - **AI 模式：** **DL-only** → UDS → STT；文本存档已做；语音 `mix` TODO  
-4. **UDS：** HAL listen `/data/vendor/ai_hook/pcm.sock`；Go `ai_call` connect  
-5. **落盘：** `/data/vendor/ai_hook/ai_incall.pcm`（需 `vendor_data_file` 写权限）  
-6. sepolicy：`hal_audio_default` 的 `execmem` + `vendor_data_file` + UDS（含 magisk peer）
+4. **UDS（主路径）：** HAL listen `pcm.sock` / abstract `@nexus_pcm`；App `com.nexus.assistant` 帧化双工（PCM_DL / PCM_UL）  
+5. **TX：** App 经 UDS 发 `PCM_UL`；**`tx_inject.pcm` 文件轮询已退役**（`NEXUS_TX_INJECT_FILE=0`，仅紧急回滚可编译打开）  
+6. sepolicy：`hal_audio_default` 的 `execmem` + `vendor_data_file` + UDS（含 `untrusted_app`）
 
 ## 目录
 
