@@ -2,7 +2,8 @@
 
 **日期：** 2026-07-20  
 **修订：** 2026-07-22（G3 完成；M5：`tx_inject` 主路径退役）  
-**状态：** Implemented-in-progress（G3 已标记；2b 软静音 Deferred）  
+**状态：** Archived（2026-07-22；G3 已标记；2b 软静音 Deferred）  
+**归档位置：** `docs/superpowers/archive/2026-07-20-nexus-app-architecture/`  
 
 **特性分支：** `nexus_app_architecture`
 

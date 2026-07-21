@@ -15,4 +15,4 @@ gradlew.bat :app:assembleDebug
 ## 文档
 
 - 总览：[`doc/00_framework_overview.md`](../doc/00_framework_overview.md)
-- 架构：[`docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md`](../docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md)
+- 归档提案：[`docs/superpowers/archive/2026-07-20-nexus-app-architecture/`](../docs/superpowers/archive/2026-07-20-nexus-app-architecture/)

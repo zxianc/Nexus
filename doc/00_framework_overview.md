@@ -5,7 +5,7 @@
 **模块：** 仅 `nexus_audio_hook`（Zygisk HAL）；业务在 Kotlin App `com.nexus.assistant`
 
 HAL 模块操作见 [`zygisk_module/doc/README.md`](../zygisk_module/doc/README.md)。  
-App 架构设计见 [`docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md`](../docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md)。  
+已归档提案：[`docs/superpowers/archive/2026-07-20-nexus-app-architecture/`](../docs/superpowers/archive/2026-07-20-nexus-app-architecture/)。  
 文档索引：[`README.md`](README.md)。
 
 ---
@@ -73,5 +73,5 @@ Webhook 正文标明：
 **仍 TODO：**
 - **AI 接听静麦保 TX**（kona：勿用系统静音 / 勿清 `TX_AIF1_CAP Mixer DEC*`；详见 architecture plan Deferred TODO）
 
-**G3：** 2026-07-22 已标记完成（遇问题再修）；见 [验收清单](../docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md)。  
+**G3：** 2026-07-22 已标记完成（遇问题再修）；见 [验收清单](../docs/superpowers/archive/2026-07-20-nexus-app-architecture/g3-acceptance.md)。  
 **M5 / Task 15：** HAL 已删除 `tx_inject.pcm` / 测试音 / DL 落盘等旧路径（仅 UDS 帧化）。

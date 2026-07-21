@@ -3,7 +3,7 @@
 **日期：** 2026-07-22  
 **分支：** `nexus_app_architecture`  
 **设备：** OnePlus 8T / LineageOS + Magisk（`nexus_audio_hook`）  
-**关联：** [architecture plan](../2026-07-20-nexus-app-architecture.md) Task 13；[design spec](../../specs/2026-07-20-nexus-app-architecture-design.md)
+**关联：** [architecture plan](plan.md) Task 13；[design spec](design.md)
 
 > **2026-07-22：** 按既有真机使用与前期冒烟，**标记 G3 完成**；后续遇问题再修。  
 > **Deferred：** 项 2b「环境音软静音」不阻塞。

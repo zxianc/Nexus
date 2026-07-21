@@ -8,7 +8,7 @@
 
 **Tech Stack:** C++17（`zygisk_module/cpp/audio_hook_hal.cpp`）、Kotlin + Android SDK（minSdk 以机型 LineageOS 为准，建议 29+；target 34）、JUnit4（JVM 协议单测）、sherpa-onnx AAR、OkHttp/HttpURLConnection（DeepSeek）、Magisk `magiskpolicy --live`。
 
-**Spec:** [`docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md`](../specs/2026-07-20-nexus-app-architecture-design.md)
+**Spec:** [`design.md`](design.md)（同目录归档）
 
 ## Global Constraints
 
