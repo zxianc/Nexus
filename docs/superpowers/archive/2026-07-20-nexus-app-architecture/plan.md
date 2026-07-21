@@ -929,7 +929,7 @@ git commit -m "feat(app): minimal dialer and InCallService"
 
 ## Execution handoff
 
-Plan complete；已归档至本目录 [`plan.md`](plan.md)（见 [`README.md`](README.md)）。
+Plan complete; archived here as [`plan.md`](plan.md) (see [`README.md`](README.md)).
 
 **Two execution options:**
 
