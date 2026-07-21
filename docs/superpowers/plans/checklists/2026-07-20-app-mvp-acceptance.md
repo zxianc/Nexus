@@ -18,8 +18,8 @@
 | 2b | AI 模式环境音被软静音 | ☐ **Deferred** | 当前可失败；勿用系统静音 / 勿清 `TX_AIF1_CAP Mixer DEC*` |
 | 3 | 通话中切「人工」后对方能听到本机 mic | ☐ | `CTRL_MUTE=0` |
 | 4 | 挂断后存档目录有 `meta.json` + `transcript.txt` | ☐ | `…/Android/data/com.nexus.assistant/files/nexus_calls/calls/` |
-| 5 | 企微收到通话摘要（若 `notify.enabled` + webhook） | ☐ | 可选 |
-| 6 | 短信转发（若启用 + `READ_SMS`） | ☐ | 可选 |
+| 5 | Webhook 收到通话摘要（含对方+本机；`notify.enabled`） | ☐ | 可选 |
+| 6 | 短信转发（含发件人+收件人本机；`READ_SMS` + SMS_RECEIVED） | ☐ | 可选 |
 | 7 | 开启接管时取消默认电话确认 → 回滚系统电话，不半残 | ☐ | |
 | 8 | 非通话时无异常录音 / 无常驻抢麦 | ☐ | |
 | 9 | 说一句后 AI 不连说（TTS 回声门控） | ☐ | log 可见 `TTS echo guard` |

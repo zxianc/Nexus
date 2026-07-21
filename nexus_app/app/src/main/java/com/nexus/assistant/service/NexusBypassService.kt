@@ -101,9 +101,9 @@ class NexusBypassService : Service() {
             }
             ACTION_END -> {
                 sessionWanted = false
-                val lines = callLlm?.transcriptLines().orEmpty()
+                val turns = callLlm?.snapshot().orEmpty()
                 teardown()
-                CallFinalizer.finalizeCall(this, lines)
+                CallFinalizer.finalizeCall(this, turns)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }

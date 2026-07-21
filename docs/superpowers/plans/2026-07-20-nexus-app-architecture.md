@@ -34,7 +34,7 @@
 | **G0** | JVM 帧协议单测绿；HAL 能发/收帧（可用 root/`ai_call` 过渡客户端验证） |
 | **G1** | Debug App `connect` → 读 APCM → 发一帧静音 `PCM_UL` 成功（真机） |
 | **G2** | AI 通话：软静音 + TTS 对方可闻；切人工 mic 恢复；非通话录音无误伤 |
-| **G3** | App MVP：策略接听、STT→LLM→TTS、文字存档、企微/短信通知 |
+| **G3** | App MVP：策略接听、STT→LLM→TTS、文字存档、Webhook/短信通知 |
 | **G4** | 停 `nexus_runtime` 守护并删 Go 前，G3 验收签字 |
 
 若只需先打通音频旁路，完成 Task 1–6 即可暂停。

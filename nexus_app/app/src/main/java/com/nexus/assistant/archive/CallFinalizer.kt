@@ -2,14 +2,19 @@ package com.nexus.assistant.archive
 
 import android.content.Context
 import android.util.Log
+import com.nexus.assistant.ai.ChatMessage
 import com.nexus.assistant.config.ConfigRepository
-import com.nexus.assistant.notify.WeComNotifier
+import com.nexus.assistant.config.LocalLineResolver
+import com.nexus.assistant.notify.WebhookDeliveryResult
+import com.nexus.assistant.notify.WebhookDeliveryStatus
+import com.nexus.assistant.notify.WebhookNotifier
 import com.nexus.assistant.telecom.CallStore
 import java.io.File
 import kotlin.concurrent.thread
 
 /**
- * Persist call archive + enqueue/drain WeCom notify after hangup.
+ * Hangup path: memory webhook (retry then mark) → structured call.json on disk.
+ * No file-based notify queue.
  */
 object CallFinalizer {
     fun archiveRoot(context: Context): File {
@@ -17,7 +22,7 @@ object CallFinalizer {
         return external ?: File(context.filesDir, "nexus_calls").also { it.mkdirs() }
     }
 
-    fun finalizeCall(context: Context, transcriptLines: List<String>) {
+    fun finalizeCall(context: Context, turns: List<ChatMessage>) {
         if (!CallStore.archivePending) {
             Log.i(TAG, "skip finalize (no pending call)")
             return
@@ -26,32 +31,48 @@ object CallFinalizer {
         val app = context.applicationContext
         val ended = System.currentTimeMillis()
         val started = CallStore.startedAtMs.takeIf { it > 0 } ?: ended
+        val slot = CallStore.slot
+        val local = LocalLineResolver.forSlot(app, slot)
         val meta =
             CallMeta(
-                slot = CallStore.slot,
-                number = CallStore.peerNumber,
+                slot = slot,
+                peerNumber = CallStore.peerNumber,
+                localNumber = local.number,
+                localLabel = local.label,
+                localCarrier = local.carrier,
                 policy = CallStore.policy,
                 startedAtMs = started,
                 endedAtMs = ended,
                 aiMode = CallStore.wasAiMode || CallStore.aiMode,
             )
         val cfg = ConfigRepository(app).load()
-        val enqueue =
+        val dirName = CallArchiveWriter.formatCallDirName(meta.startedAtMs, meta.slot)
+        val wantNotify =
             cfg.notify.enabled && cfg.notify.callEnabled && cfg.notify.webhookUrl.isNotBlank()
-        try {
-            val writer = CallArchiveWriter(archiveRoot(app))
-            val result = writer.write(meta, transcriptLines, enqueueNotify = enqueue)
-            Log.i(TAG, "archived ${result.callDir.absolutePath} lines=${transcriptLines.size}")
-            if (enqueue) {
-                thread(name = "WeComNotify") {
-                    val n = WeComNotifier.drainQueue(archiveRoot(app), cfg.notify.webhookUrl)
-                    Log.i(TAG, "wecom drained=$n")
-                }
+
+        // Snapshot for background work; clear CallStore promptly.
+        val turnsCopy = turns.toList()
+        CallStore.clearCallMeta()
+
+        thread(name = "CallFinalize") {
+            try {
+                val notifyResult =
+                    if (!wantNotify) {
+                        WebhookDeliveryResult(WebhookDeliveryStatus.SKIPPED, 0, null)
+                    } else {
+                        val text = CallArchiveWriter.buildNotifyText(meta, turnsCopy, dirName)
+                        WebhookNotifier.sendWithRetry(cfg.notify.webhookUrl, text)
+                    }
+                Log.i(
+                    TAG,
+                    "webhook status=${notifyResult.status} attempts=${notifyResult.attempts} err=${notifyResult.error}",
+                )
+                val result =
+                    CallArchiveWriter(archiveRoot(app)).write(meta, turnsCopy, notifyResult)
+                Log.i(TAG, "archived ${result.callDir.absolutePath} turns=${turnsCopy.size}")
+            } catch (e: Exception) {
+                Log.e(TAG, "finalizeCall", e)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "finalizeCall", e)
-        } finally {
-            CallStore.clearCallMeta()
         }
     }
 

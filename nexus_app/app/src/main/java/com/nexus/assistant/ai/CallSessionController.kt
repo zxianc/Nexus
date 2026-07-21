@@ -21,6 +21,8 @@ class CallSessionController(
 
     fun transcriptLines(): List<String> = session.transcriptLines()
 
+    fun snapshot(): List<ChatMessage> = session.snapshot()
+
     /**
      * @return full assistant text, or empty on failure / not ready
      */

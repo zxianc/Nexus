@@ -92,10 +92,10 @@ class SettingsActivity : Activity() {
                 maxLines = 16
                 gravity = android.view.Gravity.TOP or android.view.Gravity.START
             }
-        notifyEnabled = CheckBox(this).apply { text = "启用企微通知总开关" }
+        notifyEnabled = CheckBox(this).apply { text = "启用 Webhook 通知总开关" }
         notifyWebhookEdit = editField(singleLine = true)
-        notifySmsEnabled = CheckBox(this).apply { text = "转发短信到企微" }
-        notifyCallEnabled = CheckBox(this).apply { text = "转发通话摘要到企微" }
+        notifySmsEnabled = CheckBox(this).apply { text = "短信 Webhook 通知" }
+        notifyCallEnabled = CheckBox(this).apply { text = "通话 Webhook 通知" }
 
         root =
             LinearLayout(this).apply {
@@ -221,9 +221,10 @@ class SettingsActivity : Activity() {
             },
         )
 
-        root.addView(sectionTitle("企微 / 短信通知"))
+        root.addView(sectionTitle("Webhook 通知"))
+        root.addView(hint("挂断后内存发送，失败重试数次；结果写入 call.json，无文件队列。"))
         root.addView(notifyEnabled)
-        root.addView(label("Webhook URL"))
+        root.addView(label("Webhook URL（https://）"))
         root.addView(notifyWebhookEdit)
         root.addView(notifySmsEnabled)
         root.addView(notifyCallEnabled)

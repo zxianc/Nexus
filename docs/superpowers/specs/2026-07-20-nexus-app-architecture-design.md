@@ -1,7 +1,7 @@
 # Nexus 全新架构设计方案：Zygisk 旁路 + 纯 Android Native App 闭环
 
 **日期：** 2026-07-20  
-**修订：** 2026-07-21（§4.2.1 接管开关；§6：仅保留 `nexus_audio_hook`，模型/配置归 App，弃用 Magisk 同步）  
+**修订：** 2026-07-22（Webhook 内存发送+重试；call.json；SMS_RECEIVED；本机收件行）  
 **状态：** Draft（产品项已拍板；实现计划见 `docs/superpowers/plans/2026-07-20-nexus-app-architecture.md`）  
 **特性分支：** `nexus_app_architecture`
 
@@ -79,7 +79,7 @@
 │  (sherpa-onnx)         (sherpa-onnx)                                    │
 │       │                     ▲                                           │
 │       └──────── LLM ────────┘                                           │
-│  InCallService │ Settings / 配置真源 │ SMS + 企微通知 │ 通话文字存档       │
+│  InCallService │ Settings / 配置真源 │ SMS + Webhook │ 通话文字存档       │
 +─────────────────────────────────────────────────────────────────────────+
 ```
 
@@ -246,9 +246,9 @@ ASR 文本 → LLM（DeepSeek，通话上下文）→ 回复文本
 | :--- | :--- | :--- |
 | 双卡策略热读 | `config.json` + callpolicy | Settings + 内存热更新 |
 | LLM/STT/TTS 参数 | config + 可能重启进程 | Settings；改模型路径则重载引擎 |
-| 企微 Webhook | nexus_notify | App 内推送模块 |
-| 通话文字存档 | `call_*.txt` + `.notify` | **App 自管存储**（见 §4.6）；不兼容旧 vendor 路径 |
-| 短信转发 + cursor 水位 | notify + inbox | `READ_SMS` + ContentObserver + 水位持久化 |
+| Webhook 通知 | nexus_notify | App 内 `WebhookNotifier`（内存发送+重试，无文件队列） |
+| 通话文字存档 | `call_*.txt` + `.notify` | **App 自管** `call.json`（见 §4.6）；不兼容旧 vendor 路径 |
+| 短信转发 + cursor 水位 | notify + inbox | `READ_SMS` + `SMS_RECEIVED` + Inbox 水位；正文含本机收件行 |
 | 语音存档（含 mix） | 原 TODO / 未做 | MVP 可只留文字；目录布局预留音频，见 §4.6 |
 
 ### 4.6 通话存档与语音数据（已拍板：App 自管，不兼容旧路径）
