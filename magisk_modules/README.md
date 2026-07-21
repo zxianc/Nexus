@@ -1,4 +1,6 @@
-# Magisk 业务模块：`nexus_runtime` + `nexus_models`
+# Magisk 业务模块：`nexus_runtime` + `nexus_models`（已弃用）
+
+> **2026-07-21：** 业务已迁入 App `com.nexus.assistant`。设备上**只保留** Zygisk 模块 `nexus_audio_hook`；请 disable/卸载本目录两个模块，勿再开机拉起 Go 守护。模型与配置真源见 [`doc/00_framework_overview.md`](../doc/00_framework_overview.md)。下列内容仅作历史打包说明。
 
 与 **`nexus_audio_hook`**（HAL）解耦。程序与模型分两个 zip，版本可独立升级。
 

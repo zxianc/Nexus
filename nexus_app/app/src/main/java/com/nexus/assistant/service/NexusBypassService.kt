@@ -237,22 +237,26 @@ class NexusBypassService : Service() {
         Log.i(
             TAG,
             "models asr=${layout.asrReady()} tts=${layout.ttsReady()} " +
-                "sense=${layout.senseVoiceDir} vits=${layout.vitsDir}",
+                "stt=${layout.asrModel} tts=${layout.ttsModel}",
         )
         if (asr == null) {
             asr = SherpaAsr(layout)
         }
+        val cfg = ConfigRepository(this).load()
+        val sid = cfg.ttsSpeakerId.coerceAtLeast(0)
         if (tts == null) {
-            tts = SherpaTts(layout)
+            tts = SherpaTts(layout, speakerId = sid)
         }
         if (callLlm == null) {
-            val llmCfg = ConfigRepository(this).load().llm
+            val llmCfg = cfg.llm
             val ds = DeepSeekClient.fromConfig(llmCfg)
             callLlm =
                 CallSessionController(llmCfg, ds) { sentence ->
                     val c = client ?: return@CallSessionController
                     try {
-                        val audio = tts?.synthesize(sentence) ?: return@CallSessionController
+                        val audio =
+                            tts?.synthesize(sentence, sid = currentTtsSpeakerId())
+                                ?: return@CallSessionController
                         injectTts(c, audio.samples, audio.sampleRate)
                     } catch (e: Exception) {
                         Log.e(TAG, "sentence TTS", e)
@@ -267,10 +271,15 @@ class NexusBypassService : Service() {
         }
     }
 
+    private fun currentTtsSpeakerId(): Int =
+        ConfigRepository(this).load().ttsSpeakerId.coerceAtLeast(0)
+
     private fun playGreeting(c: PcmSocketClient) {
         aiExecutor.execute {
             try {
-                val audio = tts?.synthesize("你好，我是机主助理，请讲。") ?: return@execute
+                val audio =
+                    tts?.synthesize("你好，我是机主助理，请讲。", sid = currentTtsSpeakerId())
+                        ?: return@execute
                 injectTts(c, audio.samples, audio.sampleRate)
             } catch (e: Exception) {
                 Log.e(TAG, "greeting TTS", e)
@@ -314,7 +323,7 @@ class NexusBypassService : Service() {
 
     private fun fallbackEcho(text: String) {
         val c = client ?: return
-        val audio = tts?.synthesize("收到，$text") ?: return
+        val audio = tts?.synthesize("收到，$text", sid = currentTtsSpeakerId()) ?: return
         injectTts(c, audio.samples, audio.sampleRate)
     }
 

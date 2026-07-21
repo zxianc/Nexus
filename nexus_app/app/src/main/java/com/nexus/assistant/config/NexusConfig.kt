@@ -62,16 +62,21 @@ data class NexusConfig(
     val notify: NotifyConfig,
     /** When true, Nexus owns default dialer + suppresses stock Dialer InCallService. */
     @SerializedName("dialer_takeover") val dialerTakeover: Boolean = true,
+    /** Absolute path to STT onnx; null = default under files/models/sense-voice. */
+    @SerializedName("stt_model_path") val sttModelPath: String? = null,
+    /** Absolute path to TTS onnx; null = default under files/models/vits-zh-ll. */
+    @SerializedName("tts_model_path") val ttsModelPath: String? = null,
+    /** VITS speaker id（现行 vits-zh-ll 一般为 0～4）。 */
+    @SerializedName("tts_speaker_id") val ttsSpeakerId: Int = 0,
+    /** Legacy shared root (optional fallback when stt/tts paths unset). */
     @SerializedName("model_dir") val modelDir: String? = null,
     @SerializedName("archive_saf_uri") val archiveSafUri: String? = null,
 ) {
-    fun toJson(): String = gson.toJson(this)
-
     fun policyForSlot(slot: Int): SimPolicy =
         sims.firstOrNull { it.slot == slot }?.policy ?: SimPolicy.HUMAN
 
     companion object {
-        private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
+        private val gson: Gson = GsonBuilder().create()
 
         fun default(): NexusConfig =
             NexusConfig(
@@ -84,9 +89,9 @@ data class NexusConfig(
                 notify = NotifyConfig(),
             )
 
+        /** Legacy Magisk/App JSON only — used once by [ConfigRepository] migration. */
         fun fromJson(json: String): NexusConfig {
             val parsed = gson.fromJson(json, NexusConfig::class.java)
-            // Gson defaults missing boolean to false; absent key means "takeover on".
             val hasTakeoverKey =
                 try {
                     JsonParser.parseString(json).asJsonObject.has("dialer_takeover")

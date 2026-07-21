@@ -5,12 +5,12 @@ import org.junit.Test
 
 class NexusConfigTest {
     @Test
-    fun default_roundTrip() {
-        val json = NexusConfig.default().toJson()
-        val back = NexusConfig.fromJson(json)
-        assertEquals(SimPolicy.HUMAN, back.sims[0].policy)
-        assertEquals(2, back.sims.size)
-        assertEquals(true, back.llm.enabled)
+    fun default_hasHumanPolicies() {
+        val cfg = NexusConfig.default()
+        assertEquals(SimPolicy.HUMAN, cfg.sims[0].policy)
+        assertEquals(2, cfg.sims.size)
+        assertEquals(true, cfg.llm.enabled)
+        assertEquals(true, cfg.dialerTakeover)
     }
 
     @Test
@@ -25,5 +25,19 @@ class NexusConfigTest {
             )
         assertEquals(SimPolicy.AI, cfg.policyForSlot(0))
         assertEquals(SimPolicy.REJECT, cfg.policyForSlot(1))
+    }
+
+    @Test
+    fun fromJson_legacy_missingTakeoverDefaultsOn() {
+        val json =
+            """
+            {"sims":[{"slot":0,"label":"卡1","policy":"ai"},{"slot":1,"label":"卡2","policy":"human"}],
+             "llm":{"enabled":true,"model":"deepseek-v4-flash","api_key":"x"},
+             "notify":{"enabled":true,"webhook_url":"https://example.com"}}
+            """.trimIndent()
+        val cfg = NexusConfig.fromJson(json)
+        assertEquals(true, cfg.dialerTakeover)
+        assertEquals(SimPolicy.AI, cfg.policyForSlot(0))
+        assertEquals("x", cfg.llm.apiKey)
     }
 }

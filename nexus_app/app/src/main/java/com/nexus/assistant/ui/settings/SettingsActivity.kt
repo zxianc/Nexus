@@ -5,113 +5,332 @@ import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.InputType
+import android.view.ViewGroup
 import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import com.nexus.assistant.ai.LlmKeySync
+import com.nexus.assistant.ai.ModelFileImport
 import com.nexus.assistant.ai.ModelPaths
-import com.nexus.assistant.ai.ModelSync
+import com.nexus.assistant.archive.CallFinalizer
 import com.nexus.assistant.config.ConfigRepository
+import com.nexus.assistant.config.DEFAULT_SYSTEM_PROMPT
+import com.nexus.assistant.config.LlmConfig
+import com.nexus.assistant.config.NexusConfig
+import com.nexus.assistant.config.NotifyConfig
 import com.nexus.assistant.config.SimCatalog
 import com.nexus.assistant.config.SimConfig
 import com.nexus.assistant.config.SimPolicy
-import com.nexus.assistant.archive.CallFinalizer
 import com.nexus.assistant.notify.SmsWatcher
 import com.nexus.assistant.telecom.DialerTakeover
 import kotlin.concurrent.thread
 
 class SettingsActivity : Activity() {
     private lateinit var repo: ConfigRepository
+    private lateinit var scroll: ScrollView
     private lateinit var root: LinearLayout
     private lateinit var status: TextView
     private lateinit var takeoverStatus: TextView
+    private lateinit var takeoverButton: Button
     private lateinit var modelStatus: TextView
-    private lateinit var llmStatus: TextView
+    private lateinit var simsContainer: LinearLayout
+
+    private lateinit var ttsSpeakerEdit: EditText
+    private lateinit var llmEnabled: CheckBox
+    private lateinit var llmModelEdit: EditText
+    private lateinit var llmApiKeyEdit: EditText
+    private lateinit var llmBaseUrlEdit: EditText
+    private lateinit var llmMaxMsgsEdit: EditText
+    private lateinit var llmPromptEdit: EditText
+    private lateinit var notifyEnabled: CheckBox
+    private lateinit var notifyWebhookEdit: EditText
+    private lateinit var notifySmsEnabled: CheckBox
+    private lateinit var notifyCallEnabled: CheckBox
+    private lateinit var archivePathText: TextView
+
     private var pendingTakeoverEnable = false
+    private var uiReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = ConfigRepository(this)
         ensurePhonePermissions()
         SmsWatcher.ensureRegistered(this)
+
         status = TextView(this).apply { textSize = 15f }
         takeoverStatus = TextView(this).apply { textSize = 14f }
         modelStatus = TextView(this).apply { textSize = 14f }
-        llmStatus = TextView(this).apply { textSize = 14f }
+        simsContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        archivePathText = TextView(this).apply { textSize = 13f }
+
+        ttsSpeakerEdit =
+            editField(singleLine = true).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+            }
+        llmEnabled = CheckBox(this).apply { text = "启用 LLM" }
+        llmModelEdit = editField(singleLine = true)
+        llmApiKeyEdit =
+            editField(singleLine = true).apply {
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+        llmBaseUrlEdit = editField(singleLine = true)
+        llmMaxMsgsEdit =
+            editField(singleLine = true).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+            }
+        llmPromptEdit =
+            editField(singleLine = false).apply {
+                minLines = 6
+                maxLines = 16
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            }
+        notifyEnabled = CheckBox(this).apply { text = "启用企微通知总开关" }
+        notifyWebhookEdit = editField(singleLine = true)
+        notifySmsEnabled = CheckBox(this).apply { text = "转发短信到企微" }
+        notifyCallEnabled = CheckBox(this).apply { text = "转发通话摘要到企微" }
+
         root =
             LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(48, 48, 48, 48)
+                setPadding(48, 48, 48, 96)
             }
-        setContentView(root)
-        rebuildUi()
+        scroll =
+            ScrollView(this).apply {
+                addView(
+                    root,
+                    ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
+        setContentView(scroll)
+        buildStaticUi()
+        bindFromConfig(repo.refreshSimMetadata())
+        uiReady = true
     }
 
     override fun onResume() {
         super.onResume()
-        rebuildUi()
+        if (!uiReady) return
+        // 不重建整页，避免编辑中被冲掉；只刷新状态与卡列表。
+        val cfg = repo.refreshSimMetadata()
+        refreshStatus(cfg)
+        refreshTakeoverStatus()
+        refreshModelStatus()
+        rebuildSims(cfg)
+        archivePathText.text = "存档目录：${CallFinalizer.archiveRoot(this).absolutePath}"
     }
 
-    private fun rebuildUi() {
-        val cfg = repo.refreshSimMetadata()
+    private fun buildStaticUi() {
         root.removeAllViews()
         root.addView(status)
-        refreshStatus(cfg)
-
         root.addView(takeoverStatus)
-        refreshTakeoverStatus()
-        val takeoverOn = cfg.dialerTakeover
-        root.addView(
+        takeoverButton =
             Button(this).apply {
-                text = if (takeoverOn) "关闭 Nexus 接管 → 交回系统电话" else "开启 Nexus 接管"
-                setOnClickListener { toggleTakeover(!takeoverOn) }
-            },
-        )
+                text = "切换 Nexus 接管"
+                setOnClickListener {
+                    val on = repo.load().dialerTakeover
+                    toggleTakeover(!on)
+                }
+            }
+        root.addView(takeoverButton)
         root.addView(
             Button(this).apply {
                 text = "刷新卡信息"
                 setOnClickListener {
-                    rebuildUi()
+                    val cfg = repo.refreshSimMetadata()
+                    refreshStatus(cfg)
+                    rebuildSims(cfg)
                     Toast.makeText(this@SettingsActivity, "已刷新", Toast.LENGTH_SHORT).show()
                 }
             },
         )
+
+        root.addView(sectionTitle("双卡策略"))
+        root.addView(simsContainer)
+
+        root.addView(sectionTitle("STT / TTS 模型"))
+        root.addView(
+            hint(
+                "分别选择主模型 .onnx；同目录需有 tokens.txt（TTS 另需 lexicon.txt）。文件夹名任意。",
+            ),
+        )
         root.addView(modelStatus)
-        refreshModelStatus()
         root.addView(
             Button(this).apply {
-                text = "同步 Magisk 模型"
-                setOnClickListener { syncModels() }
+                text = "选择 STT 模型 (.onnx)"
+                setOnClickListener { pickModelFile(REQ_PICK_STT) }
             },
         )
-        root.addView(llmStatus)
-        refreshLlmStatus()
         root.addView(
             Button(this).apply {
-                text = "同步 Magisk API Key"
-                setOnClickListener { syncLlmKey() }
+                text = "恢复默认 STT"
+                setOnClickListener {
+                    val cfg = repo.load()
+                    repo.save(cfg.copy(sttModelPath = null))
+                    refreshModelStatus()
+                    Toast.makeText(this@SettingsActivity, "STT 已恢复默认", Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+        root.addView(
+            Button(this).apply {
+                text = "选择 TTS 模型 (.onnx)"
+                setOnClickListener { pickModelFile(REQ_PICK_TTS) }
+            },
+        )
+        root.addView(
+            Button(this).apply {
+                text = "恢复默认 TTS"
+                setOnClickListener {
+                    val cfg = repo.load()
+                    repo.save(cfg.copy(ttsModelPath = null))
+                    refreshModelStatus()
+                    Toast.makeText(this@SettingsActivity, "TTS 已恢复默认", Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+        root.addView(label("TTS Speaker ID（vits-zh-ll 一般为 0～4）"))
+        root.addView(ttsSpeakerEdit)
+
+        root.addView(sectionTitle("LLM"))
+        root.addView(llmEnabled)
+        root.addView(label("模型名"))
+        root.addView(llmModelEdit)
+        root.addView(label("API Key"))
+        root.addView(llmApiKeyEdit)
+        root.addView(label("Base URL"))
+        root.addView(llmBaseUrlEdit)
+        root.addView(label("上下文最大消息数 max_msgs"))
+        root.addView(llmMaxMsgsEdit)
+        root.addView(label("系统提示词（可用 {{NOW}}）"))
+        root.addView(llmPromptEdit)
+        root.addView(
+            Button(this).apply {
+                text = "恢复默认系统提示词"
+                setOnClickListener { llmPromptEdit.setText(DEFAULT_SYSTEM_PROMPT) }
             },
         )
 
+        root.addView(sectionTitle("企微 / 短信通知"))
+        root.addView(notifyEnabled)
+        root.addView(label("Webhook URL"))
+        root.addView(notifyWebhookEdit)
+        root.addView(notifySmsEnabled)
+        root.addView(notifyCallEnabled)
+        root.addView(archivePathText)
+
+        root.addView(
+            Button(this).apply {
+                text = "保存配置"
+                setOnClickListener { saveEditableConfig() }
+            },
+        )
+    }
+
+    private fun bindFromConfig(cfg: NexusConfig) {
+        ttsSpeakerEdit.setText(cfg.ttsSpeakerId.toString())
+        llmEnabled.isChecked = cfg.llm.enabled
+        llmModelEdit.setText(cfg.llm.model)
+        llmApiKeyEdit.setText(cfg.llm.apiKey)
+        llmBaseUrlEdit.setText(cfg.llm.baseUrl)
+        llmMaxMsgsEdit.setText(cfg.llm.maxMsgs.toString())
+        llmPromptEdit.setText(cfg.llm.systemPrompt)
+        notifyEnabled.isChecked = cfg.notify.enabled
+        notifyWebhookEdit.setText(cfg.notify.webhookUrl)
+        notifySmsEnabled.isChecked = cfg.notify.smsEnabled
+        notifyCallEnabled.isChecked = cfg.notify.callEnabled
+        refreshStatus(cfg)
+        refreshTakeoverStatus()
+        refreshModelStatus()
+        rebuildSims(cfg)
+        archivePathText.text = "存档目录：${CallFinalizer.archiveRoot(this).absolutePath}"
+        // 接管按钮文案在 onResume 里不重建；这里更新第一个相关按钮较麻烦，用 Toast/状态行即可
+        updateTakeoverButtonLabel(cfg.dialerTakeover)
+    }
+
+    private fun updateTakeoverButtonLabel(takeoverOn: Boolean) {
+        if (!::takeoverButton.isInitialized) return
+        takeoverButton.text =
+            if (takeoverOn) "关闭 Nexus 接管 → 交回系统电话" else "开启 Nexus 接管"
+    }
+
+    private fun saveEditableConfig() {
+        val maxMsgs =
+            llmMaxMsgsEdit.text.toString().trim().toIntOrNull()
+                ?: run {
+                    Toast.makeText(this, "max_msgs 必须是数字", Toast.LENGTH_SHORT).show()
+                    return
+                }
+        if (maxMsgs < 2) {
+            Toast.makeText(this, "max_msgs 至少为 2", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val speakerId =
+            ttsSpeakerEdit.text.toString().trim().toIntOrNull()
+                ?: run {
+                    Toast.makeText(this, "Speaker ID 必须是数字", Toast.LENGTH_SHORT).show()
+                    return
+                }
+        if (speakerId < 0) {
+            Toast.makeText(this, "Speaker ID 不能为负", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val cur = repo.load()
+        val next =
+            cur.copy(
+                ttsSpeakerId = speakerId,
+                llm =
+                    LlmConfig(
+                        enabled = llmEnabled.isChecked,
+                        model = llmModelEdit.text.toString().trim().ifEmpty { LlmConfig().model },
+                        apiKey = llmApiKeyEdit.text.toString().trim(),
+                        baseUrl =
+                            llmBaseUrlEdit.text.toString().trim().ifEmpty { LlmConfig().baseUrl },
+                        maxMsgs = maxMsgs,
+                        systemPrompt =
+                            llmPromptEdit.text.toString().ifBlank { DEFAULT_SYSTEM_PROMPT },
+                    ),
+                notify =
+                    NotifyConfig(
+                        enabled = notifyEnabled.isChecked,
+                        webhookUrl = notifyWebhookEdit.text.toString().trim(),
+                        smsEnabled = notifySmsEnabled.isChecked,
+                        callEnabled = notifyCallEnabled.isChecked,
+                    ),
+            )
+        repo.save(next)
+        SmsWatcher.ensureRegistered(this)
+        refreshModelStatus()
+        Toast.makeText(this, "配置已保存", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun rebuildSims(cfg: NexusConfig) {
+        simsContainer.removeAllViews()
         cfg.sims.sortedBy { it.slot }.forEach { sim ->
-            root.addView(simHeader(sim))
-            root.addView(
+            simsContainer.addView(simHeader(sim))
+            simsContainer.addView(
                 Button(this).apply {
                     text = "卡${sim.slot + 1} 策略 → AI"
                     setOnClickListener { setPolicy(sim.slot, SimPolicy.AI) }
                 },
             )
-            root.addView(
+            simsContainer.addView(
                 Button(this).apply {
                     text = "卡${sim.slot + 1} 策略 → 人工"
                     setOnClickListener { setPolicy(sim.slot, SimPolicy.HUMAN) }
                 },
             )
-            root.addView(
+            simsContainer.addView(
                 Button(this).apply {
                     text = "卡${sim.slot + 1} 策略 → 拒接"
                     setOnClickListener { setPolicy(sim.slot, SimPolicy.REJECT) }
@@ -125,7 +344,7 @@ class SettingsActivity : Activity() {
         val number = sim.number.ifBlank { "号码未知" }
         return TextView(this).apply {
             textSize = 16f
-            setPadding(0, 36, 0, 12)
+            setPadding(0, 24, 0, 8)
             text =
                 buildString {
                     appendLine("卡${sim.slot + 1}")
@@ -140,11 +359,11 @@ class SettingsActivity : Activity() {
         val cfg = repo.load()
         val sims = cfg.sims.map { if (it.slot == slot) it.copy(policy = policy) else it }
         repo.save(cfg.copy(sims = sims))
-        rebuildUi()
+        rebuildSims(repo.load())
         Toast.makeText(this, "卡${slot + 1} 已设为 ${SimCatalog.policyLabel(policy)}", Toast.LENGTH_SHORT).show()
     }
 
-    private fun refreshStatus(cfg: com.nexus.assistant.config.NexusConfig) {
+    private fun refreshStatus(cfg: NexusConfig) {
         val dialer =
             if (isDefaultDialer()) {
                 "已是默认电话"
@@ -156,6 +375,7 @@ class SettingsActivity : Activity() {
                 appendLine(dialer)
                 appendLine("已识别 ${cfg.sims.size} 张卡")
             }
+        updateTakeoverButtonLabel(cfg.dialerTakeover)
     }
 
     private fun refreshTakeoverStatus() {
@@ -168,14 +388,12 @@ class SettingsActivity : Activity() {
             applyTakeover(false, tip = "正在交回系统电话…")
             return
         }
-        // ON：先等用户确认默认电话，确认后再切组件；取消则回滚，避免半残。
         if (isDefaultDialer()) {
             applyTakeover(true, tip = "正在开启 Nexus 接管…")
             return
         }
         pendingTakeoverEnable = true
         Toast.makeText(this, "正在准备默认电话确认…", Toast.LENGTH_SHORT).show()
-        // 交回时会 disable Nexus InCall；不先 enable 的话系统不弹 ROLE 确认窗。
         thread(name = "DialerTakeoverPrepare") {
             val prep = DialerTakeover.prepareRoleRequest(this)
             runOnUiThread {
@@ -201,7 +419,7 @@ class SettingsActivity : Activity() {
             val result = DialerTakeover.setEnabled(this, enable)
             runOnUiThread {
                 refreshTakeoverStatus()
-                rebuildUi()
+                refreshStatus(repo.load())
                 Toast.makeText(
                     this,
                     result.fold(
@@ -210,7 +428,6 @@ class SettingsActivity : Activity() {
                     ),
                     Toast.LENGTH_LONG,
                 ).show()
-                // Role 弹窗有时会顺带拉起拨号盘；开启成功后拉回 Settings。
                 if (enable && result.isSuccess) {
                     bringSettingsToFront()
                 }
@@ -226,7 +443,6 @@ class SettingsActivity : Activity() {
         )
     }
 
-    /** 用户未确认默认电话 → 强制交回系统电话，避免 Dialer ICS 被禁用却无 UI。 */
     private fun rollbackTakeover() {
         pendingTakeoverEnable = false
         Toast.makeText(this, "未选择 Nexus，正在恢复系统电话…", Toast.LENGTH_SHORT).show()
@@ -234,7 +450,7 @@ class SettingsActivity : Activity() {
             val result = DialerTakeover.setEnabled(this, false)
             runOnUiThread {
                 refreshTakeoverStatus()
-                rebuildUi()
+                refreshStatus(repo.load())
                 Toast.makeText(
                     this,
                     result.fold(
@@ -251,80 +467,90 @@ class SettingsActivity : Activity() {
         val layout = ModelPaths.resolve(this)
         modelStatus.text =
             buildString {
-                appendLine("模型 ASR：${if (layout.asrReady()) "就绪" else "缺失"}")
-                appendLine("模型 TTS：${if (layout.ttsReady()) "就绪" else "缺失"}")
-                appendLine("路径：${layout.senseVoiceDir.parentFile?.absolutePath ?: "?"}")
+                appendLine("STT：${if (layout.asrReady()) "就绪" else "缺失"}")
+                appendLine(layout.asrModel.absolutePath)
+                appendLine("TTS：${if (layout.ttsReady()) "就绪" else "缺失"}")
+                appendLine(layout.ttsModel.absolutePath)
+                appendLine("Speaker ID：${repo.load().ttsSpeakerId}")
                 val miss = layout.missing()
                 if (miss.isNotEmpty()) {
-                    append("缺失文件：${miss.size} 个（需 root 同步）")
+                    append("缺失 ${miss.size} 个文件")
                 }
             }
     }
 
-    private fun syncModels() {
-        Toast.makeText(this, "正在同步模型…", Toast.LENGTH_SHORT).show()
-        thread(name = "ModelSync") {
-            val result = ModelSync.syncFromMagisk(this)
+    private fun pickModelFile(requestCode: Int) {
+        val intent =
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/octet-stream", "*/*"))
+            }
+        startActivityForResult(intent, requestCode)
+    }
+
+    private fun onModelPicked(requestCode: Int, uri: Uri) {
+        Toast.makeText(this, "正在导入模型…", Toast.LENGTH_SHORT).show()
+        thread(name = "ModelImport") {
+            val result =
+                when (requestCode) {
+                    REQ_PICK_STT -> ModelFileImport.importStt(this, uri)
+                    REQ_PICK_TTS -> ModelFileImport.importTts(this, uri)
+                    else -> Result.failure(IllegalArgumentException("unknown request"))
+                }
             runOnUiThread {
-                refreshModelStatus()
-                Toast.makeText(
-                    this,
-                    result.fold(
-                        onSuccess = { it },
-                        onFailure = { "同步失败：${it.message}" },
-                    ),
-                    Toast.LENGTH_LONG,
-                ).show()
+                result.fold(
+                    onSuccess = { imported ->
+                        val cfg = repo.load()
+                        when (requestCode) {
+                            REQ_PICK_STT ->
+                                repo.save(cfg.copy(sttModelPath = imported.modelFile.absolutePath))
+                            REQ_PICK_TTS ->
+                                repo.save(cfg.copy(ttsModelPath = imported.modelFile.absolutePath))
+                        }
+                        refreshModelStatus()
+                        val extra =
+                            if (imported.copiedSidecars.isEmpty()) {
+                                ""
+                            } else {
+                                "；已带：${imported.copiedSidecars.joinToString()}"
+                            }
+                        Toast.makeText(this, "导入成功$extra", Toast.LENGTH_LONG).show()
+                    },
+                    onFailure = {
+                        Toast.makeText(this, "导入失败：${it.message}", Toast.LENGTH_LONG).show()
+                        refreshModelStatus()
+                    },
+                )
             }
         }
     }
 
-    private fun refreshLlmStatus() {
-        val cfg = repo.load()
-        val llm = cfg.llm
-        val n = cfg.notify
-        llmStatus.text =
-            buildString {
-                appendLine("LLM：${if (llm.enabled) "启用" else "关闭"} / ${llm.model}")
-                appendLine(
-                    if (llm.apiKey.isBlank()) {
-                        "API Key：未配置"
-                    } else {
-                        "API Key：已配置（…${llm.apiKey.takeLast(4)}）"
-                    },
-                )
-                appendLine(
-                    "企微：${if (n.enabled && n.callEnabled) "通话通知开" else "通话通知关"} / " +
-                        "短信${if (n.enabled && n.smsEnabled) "开" else "关"}",
-                )
-                appendLine(
-                    if (n.webhookUrl.isBlank()) {
-                        "Webhook：未配置"
-                    } else {
-                        "Webhook：已配置"
-                    },
-                )
-                append("存档：${CallFinalizer.archiveRoot(this@SettingsActivity).absolutePath}")
-            }
-    }
-
-    private fun syncLlmKey() {
-        Toast.makeText(this, "正在同步 API Key…", Toast.LENGTH_SHORT).show()
-        thread(name = "LlmKeySync") {
-            val result = LlmKeySync.syncFromMagisk(this)
-            runOnUiThread {
-                refreshLlmStatus()
-                Toast.makeText(
-                    this,
-                    result.fold(
-                        onSuccess = { it },
-                        onFailure = { "同步失败：${it.message}" },
-                    ),
-                    Toast.LENGTH_LONG,
-                ).show()
-            }
+    private fun sectionTitle(title: String): TextView =
+        TextView(this).apply {
+            textSize = 18f
+            setPadding(0, 40, 0, 12)
+            text = title
         }
-    }
+
+    private fun label(text: String): TextView =
+        TextView(this).apply {
+            textSize = 13f
+            setPadding(0, 16, 0, 4)
+            this.text = text
+        }
+
+    private fun hint(text: String): TextView =
+        TextView(this).apply {
+            textSize = 12f
+            this.text = text
+        }
+
+    private fun editField(singleLine: Boolean): EditText =
+        EditText(this).apply {
+            this.isSingleLine = singleLine
+            textSize = 14f
+        }
 
     private fun ensurePhonePermissions() {
         val need = ArrayList<String>()
@@ -362,12 +588,11 @@ class SettingsActivity : Activity() {
                         REQ_ROLE_DIALER,
                     )
                     return
-                } catch (e: Exception) {
-                    // fall through to legacy dialer change intent
+                } catch (_: Exception) {
+                    // fall through
                 }
             }
         }
-        // 兼容：部分系统 Role 弹窗不出现时，用旧版「更改默认电话」Intent。
         try {
             val legacy =
                 Intent(android.telecom.TelecomManager.ACTION_CHANGE_DEFAULT_DIALER).putExtra(
@@ -388,27 +613,45 @@ class SettingsActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_PHONE) {
-            rebuildUi()
+            SmsWatcher.ensureRegistered(this)
+            refreshStatus(repo.refreshSimMetadata())
         }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK_STT || requestCode == REQ_PICK_TTS) {
+            if (resultCode == RESULT_OK) {
+                val uri = data?.data
+                if (uri != null) {
+                    try {
+                        contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    } catch (_: Exception) {
+                    }
+                    onModelPicked(requestCode, uri)
+                }
+            }
+            return
+        }
         if (requestCode != REQ_ROLE_DIALER) {
-            rebuildUi()
+            refreshStatus(repo.load())
+            refreshTakeoverStatus()
             return
         }
         val wantedEnable = pendingTakeoverEnable
         pendingTakeoverEnable = false
         if (!wantedEnable) {
-            rebuildUi()
+            refreshStatus(repo.load())
+            refreshTakeoverStatus()
             return
         }
         if (resultCode == RESULT_OK || isDefaultDialer()) {
             applyTakeover(true, tip = "已确认默认电话，正在开启 Nexus 接管…")
             return
         }
-        // 部分机型角色已写入但先回传 CANCELED；短暂等待后再决定是否回滚。
         takeoverStatus.postDelayed({
             if (isDefaultDialer()) {
                 applyTakeover(true, tip = "已确认默认电话，正在开启 Nexus 接管…")
@@ -421,5 +664,7 @@ class SettingsActivity : Activity() {
     companion object {
         private const val REQ_PHONE = 2001
         private const val REQ_ROLE_DIALER = 1001
+        private const val REQ_PICK_STT = 3001
+        private const val REQ_PICK_TTS = 3002
     }
 }

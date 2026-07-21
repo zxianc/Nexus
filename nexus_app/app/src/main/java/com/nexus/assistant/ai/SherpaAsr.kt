@@ -34,11 +34,11 @@ class SherpaAsr(
                     OfflineModelConfig().apply {
                         senseVoice =
                             OfflineSenseVoiceModelConfig().apply {
-                                model = layout.senseVoiceModel.absolutePath
+                                model = layout.asrModel.absolutePath
                                 language = lang
                                 useInverseTextNormalization = true
                             }
-                        tokens = layout.senseVoiceTokens.absolutePath
+                        tokens = layout.asrTokens.absolutePath
                         numThreads = threads
                         debug = false
                         provider = "cpu"
@@ -52,7 +52,7 @@ class SherpaAsr(
                     }
                 recognizer = OfflineRecognizer(null, config)
                 ready.set(true)
-                Log.i(TAG, "ASR loaded from ${layout.senseVoiceDir}")
+                Log.i(TAG, "ASR loaded from ${layout.asrModel}")
                 true
             } catch (e: Exception) {
                 Log.e(TAG, "ASR load failed", e)

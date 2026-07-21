@@ -627,7 +627,7 @@ git commit -m "feat: allow app UDS to pcm.sock and add connect smoke UI"
   - `enum class SimPolicy { HUMAN, AI, REJECT }`
   - `data class SimConfig(val slot: Int, val label: String, val policy: SimPolicy, ...)`
   - `data class NexusConfig(val sims: List<SimConfig>, val llm: LlmConfig, val notify: NotifyConfig, val modelDir: String?, val archiveSafUri: String?)`
-  - `class ConfigRepository(context: Context)` — `fun load(): NexusConfig` / `suspend fun save(cfg: NexusConfig)`，JSON 存 `filesDir/config.json`
+  - `class ConfigRepository(context: Context)` — `fun load()/save()`，SharedPreferences `nexus_config`（一次性迁移旧 `filesDir/config.json` 后删除）
   - Settings：编辑双卡策略、DeepSeek key、Webhook、模型目录提示、**「设为默认电话」**按钮（`RoleManager.ROLE_DIALER`）
 
 - [ ] **Step 1: 单测默认 config 序列化**
@@ -806,7 +806,7 @@ git commit -m "feat(app): minimal dialer and InCallService"
 **Interfaces:**
 - SenseVoice：**Offline** API（按 AAR 文档；不要假设 OnlineSenseVoice）
 - TTS：`OfflineTts` VITS；`synthesize(text): FloatArray/ByteArray` → resample 到注入格式 → `PCM_UL` 帧发送
-- 模型路径：默认尝试 `/data/adb/modules/nexus_models/models/...`，失败则 Settings 提示 SAF
+- 模型路径：仅 App `files/models/...`（或 config `model_dir`）；**不再**读 Magisk `nexus_models`
 
 - [ ] **Step 1: 依赖可解析 spike** — `./gradlew :app:assembleDebug`  
 - [ ] **Step 2: 离线文件测 ASR**（assets 或 adb push 一小段 wav）  
@@ -878,16 +878,19 @@ git commit -m "feat(app): minimal dialer and InCallService"
 
 ---
 
-### Task 14: M4 — 停用 Go 守护（验收后）
+### Task 14: M4 — 停用 Go / models 模块（仅保留 hook）
+
+**决策（2026-07-21）：** 不等 G3 签字，设备侧已弃用 `nexus_models`/`nexus_runtime`；配置与模型归 App。
 
 **Files:**
-- Modify: `magisk_modules/nexus_runtime/service.sh` — 默认不再拉起 `ai_call`/`nexus_engine`/`callpolicy`/`notify`/`webui`（或模块标记废弃）
-- Modify: `doc/00_framework_overview.md` — 改为 App 闭环描述
-- **不要**物理删除 `daemon/*` 源码直到再观察一周（可保留但不打包进 zip）
+- Modify: `doc/00_framework_overview.md` — App 闭环 + 仅 `nexus_audio_hook`
+- App：删除 Magisk 同步 UI（`ModelSync`/`LlmKeySync`）；`ModelPaths` 只解析 App `files/models`
+- 一次性迁移：`nexus_app/scripts/migrate_magisk_config_once.py`（PC 侧合并后 push）
+- `daemon/*` 源码可暂留，**不装机、不打包进 Magisk zip**
 
-- [ ] **Step 1: 改 service.sh 为 no-op/仅保留目录权限**  
-- [ ] **Step 2: 重打包 `nexus_runtime`，确认 App 独扛业务**  
-- [ ] **Step 3: Commit** `chore(runtime): stop Go daemons after App MVP acceptance`
+- [x] **Step 1: 设备 disable `nexus_models`；杀遗留 Go 守护（本机无 `nexus_runtime`）**  
+- [x] **Step 2: LLM/企微/模型迁入 App `files/`；Settings 去掉 Magisk 同步按钮**  
+- [ ] **Step 3: Commit** `chore(app): drop Magisk sync; keep audio hook only`
 
 ---
 

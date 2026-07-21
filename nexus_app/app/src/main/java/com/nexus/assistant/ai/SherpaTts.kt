@@ -37,16 +37,16 @@ class SherpaTts(
             return try {
                 val fsts =
                     listOf("phone.fst", "date.fst", "number.fst")
-                        .map { File(layout.vitsDir, it) }
+                        .map { File(layout.ttsSidecarDir, it) }
                         .filter { it.isFile }
                         .joinToString(",") { it.absolutePath }
                 val modelConfig =
                     OfflineTtsModelConfig().apply {
                         vits =
                             OfflineTtsVitsModelConfig().apply {
-                                model = layout.vitsModel.absolutePath
-                                lexicon = layout.vitsLexicon.absolutePath
-                                tokens = layout.vitsTokens.absolutePath
+                                model = layout.ttsModel.absolutePath
+                                lexicon = layout.ttsLexicon.absolutePath
+                                tokens = layout.ttsTokens.absolutePath
                             }
                         numThreads = threads
                         debug = false
@@ -62,7 +62,7 @@ class SherpaTts(
                 ready.set(true)
                 Log.i(
                     TAG,
-                    "TTS loaded from ${layout.vitsDir} sampleRate=${tts!!.sampleRate()} speakers=${tts!!.numSpeakers()}",
+                    "TTS loaded from ${layout.ttsModel} sampleRate=${tts!!.sampleRate()} speakers=${tts!!.numSpeakers()}",
                 )
                 true
             } catch (e: Exception) {

@@ -1,9 +1,9 @@
 # Nexus 全新架构设计方案：Zygisk 旁路 + 纯 Android Native App 闭环
 
 **日期：** 2026-07-20  
-**修订：** 2026-07-21（§4.2.1：开启需确认默认电话；取消则回滚 OFF）  
+**修订：** 2026-07-21（§4.2.1 接管开关；§6：仅保留 `nexus_audio_hook`，模型/配置归 App，弃用 Magisk 同步）  
 **状态：** Draft（产品项已拍板；实现计划见 `docs/superpowers/plans/2026-07-20-nexus-app-architecture.md`）  
-**特性分支：** `nexus-app-architecture`
+**特性分支：** `nexus_app_architecture`
 
 ---
 
@@ -332,16 +332,18 @@ M0  协议与冒烟：帧协议 + App 连 UDS 成功（§3.5）
 M1  HAL：双工 UL 帧注入 + 软静音门控；保留 tx_inject 回滚开关
 M2  过渡：Go ai_call 仍可读 DL（若需临时兼容裸流，仅过渡分支）；或 App 并行读流做 STT 对照
 M3  App MVP：InCallService + 策略 + LLM + sherpa + 通知/存档
-M4  功能对等验收通过后，再停 nexus_runtime 开机脚本并删除 Go 守护
-M5  清理：移除 tx_inject 主路径、WebUI、旧 config 热读进程
+M4  停用 `nexus_runtime` / `nexus_models`（设备 disable 或卸载）；业务仅 App
+M5  清理：移除 tx_inject 主路径、旧 Magisk 同步 UI、遗留 Go 打包路径
 ```
 
-**明确禁止：** 在 App 未通过 §4.5 对等验收前删除 `daemon/*` 或停掉 `nexus_runtime`。
+**现行决策（2026-07-21）：** 彻底抛弃 `nexus_runtime` / `nexus_models`，**只保留** Magisk 侧 `nexus_audio_hook`。模型、LLM、企微配置以 App `files/` 为真源；不做运行时 Magisk↔App 同步（一次性迁移脚本可保留）。`daemon/*` 源码可暂留仓库，但不再装机、不再开机拉起。
 
 模块收敛目标（终态）：
 
-* 保留：`nexus_audio_hook`（Zygisk）、`nexus_models`（或改由 App/SAF 管理模型）；
-* 移除：`nexus_runtime` Go 守护与 8787 WebUI。
+* 保留：`nexus_audio_hook`（Zygisk HAL 旁路）；
+* 模型：`com.nexus.assistant/files/models/{sense-voice,vits-zh-ll}`；
+* 配置：App SharedPreferences `nexus_config`（含 LLM key、企微 webhook、双卡策略）；
+* 移除：`nexus_runtime`、`nexus_models`、WebUI、Magisk 同步按钮。
 
 ---
 
