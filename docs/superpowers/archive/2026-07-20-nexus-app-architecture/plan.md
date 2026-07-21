@@ -929,7 +929,7 @@ git commit -m "feat(app): minimal dialer and InCallService"
 
 ## Execution handoff
 
-Plan complete and saved to [`docs/superpowers/plans/2026-07-20-nexus-app-architecture.md`](docs/superpowers/plans/2026-07-20-nexus-app-architecture.md).
+Plan complete；已归档至本目录 [`plan.md`](plan.md)（见 [`README.md`](README.md)）。
 
 **Two execution options:**
 
