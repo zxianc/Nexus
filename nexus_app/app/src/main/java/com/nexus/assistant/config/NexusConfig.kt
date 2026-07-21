@@ -68,6 +68,9 @@ data class NexusConfig(
     @SerializedName("tts_model_path") val ttsModelPath: String? = null,
     /** VITS speaker id（现行 vits-zh-ll 一般为 0～4）。 */
     @SerializedName("tts_speaker_id") val ttsSpeakerId: Int = 0,
+    /** Play a fixed TTS greeting right after AI answer. */
+    @SerializedName("greeting_enabled") val greetingEnabled: Boolean = false,
+    @SerializedName("greeting_text") val greetingText: String = DEFAULT_GREETING_TEXT,
     /** Legacy shared root (optional fallback when stt/tts paths unset). */
     @SerializedName("model_dir") val modelDir: String? = null,
     @SerializedName("archive_saf_uri") val archiveSafUri: String? = null,
@@ -122,3 +125,5 @@ const val DEFAULT_SYSTEM_PROMPT =
 4. 若对方仍有问题、必须联系机主、或你无法代决：请对方加微信联系机主，不要泄露隐私，不要承诺机主何时回电。
 
 开场可先问来意；确认类型后按上面规则答复。不要主动透露你是 AI，除非对方追问。"""
+
+const val DEFAULT_GREETING_TEXT = "你好，我是机主助理，请讲。"

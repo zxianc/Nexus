@@ -22,6 +22,7 @@ import com.nexus.assistant.ai.ModelFileImport
 import com.nexus.assistant.ai.ModelPaths
 import com.nexus.assistant.archive.CallFinalizer
 import com.nexus.assistant.config.ConfigRepository
+import com.nexus.assistant.config.DEFAULT_GREETING_TEXT
 import com.nexus.assistant.config.DEFAULT_SYSTEM_PROMPT
 import com.nexus.assistant.config.LlmConfig
 import com.nexus.assistant.config.NexusConfig
@@ -44,6 +45,8 @@ class SettingsActivity : Activity() {
     private lateinit var simsContainer: LinearLayout
 
     private lateinit var ttsSpeakerEdit: EditText
+    private lateinit var greetingEnabled: CheckBox
+    private lateinit var greetingTextEdit: EditText
     private lateinit var llmEnabled: CheckBox
     private lateinit var llmModelEdit: EditText
     private lateinit var llmApiKeyEdit: EditText
@@ -74,6 +77,13 @@ class SettingsActivity : Activity() {
         ttsSpeakerEdit =
             editField(singleLine = true).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER
+            }
+        greetingEnabled = CheckBox(this).apply { text = "启用开场白 TTS" }
+        greetingTextEdit =
+            editField(singleLine = false).apply {
+                minLines = 2
+                maxLines = 4
+                gravity = android.view.Gravity.TOP or android.view.Gravity.START
             }
         llmEnabled = CheckBox(this).apply { text = "启用 LLM" }
         llmModelEdit = editField(singleLine = true)
@@ -152,6 +162,18 @@ class SettingsActivity : Activity() {
                     rebuildSims(cfg)
                     Toast.makeText(this@SettingsActivity, "已刷新", Toast.LENGTH_SHORT).show()
                 }
+            },
+        )
+
+        root.addView(sectionTitle("开场白"))
+        root.addView(hint("开启后，AI 接听接通时先播报下方文案；默认关闭。改完请点底部「保存配置」。"))
+        root.addView(greetingEnabled)
+        root.addView(label("开场白文案"))
+        root.addView(greetingTextEdit)
+        root.addView(
+            Button(this).apply {
+                text = "恢复默认开场白文案"
+                setOnClickListener { greetingTextEdit.setText(DEFAULT_GREETING_TEXT) }
             },
         )
 
@@ -240,6 +262,8 @@ class SettingsActivity : Activity() {
 
     private fun bindFromConfig(cfg: NexusConfig) {
         ttsSpeakerEdit.setText(cfg.ttsSpeakerId.toString())
+        greetingEnabled.isChecked = cfg.greetingEnabled
+        greetingTextEdit.setText(cfg.greetingText.ifBlank { DEFAULT_GREETING_TEXT })
         llmEnabled.isChecked = cfg.llm.enabled
         llmModelEdit.setText(cfg.llm.model)
         llmApiKeyEdit.setText(cfg.llm.apiKey)
@@ -290,6 +314,9 @@ class SettingsActivity : Activity() {
         val next =
             cur.copy(
                 ttsSpeakerId = speakerId,
+                greetingEnabled = greetingEnabled.isChecked,
+                greetingText =
+                    greetingTextEdit.text.toString().trim().ifBlank { DEFAULT_GREETING_TEXT },
                 llm =
                     LlmConfig(
                         enabled = llmEnabled.isChecked,

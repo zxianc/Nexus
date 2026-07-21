@@ -59,7 +59,7 @@
 | `nexus_app/.../ai/*` | sherpa 封装、DeepSeek、通话状态机 |
 | `nexus_app/.../config/NexusConfig.kt` | DataStore/JSON 配置真源 |
 | `nexus_app/.../archive/CallArchive.kt` | 一通一目录文字存档 |
-| `nexus_app/.../notify/*` | 企微 Webhook、短信 Observer |
+| `nexus_app/.../notify/*` | Webhook（内存重试）、SMS_RECEIVED + Inbox 水位 |
 | `nexus_app/.../ui/settings/*` | 策略/API/模型/默认电话引导；**Nexus 接管开关** |
 | `nexus_app/.../telecom/DialerTakeover.kt` | 系统电话 ↔ Nexus 可逆切换（root：enable/disable 系统 Dialer ICS） |
 | `doc/00_framework_overview.md` | G4 后更新架构说明（勿在 M0 改） |
@@ -833,24 +833,24 @@ git commit -m "feat(app): minimal dialer and InCallService"
 
 ---
 
-### Task 12: 通话存档 + 企微通知 + 短信
+### Task 12: 通话存档 + Webhook 通知 + 短信
 
 **Files:**
-- Create: `nexus_app/.../archive/CallArchiveWriter.kt`
-- Create: `nexus_app/.../notify/WeComNotifier.kt`
-- Create: `nexus_app/.../notify/SmsWatcher.kt`
-- Test: `CallArchiveWriterTest`（临时目录）
+- `CallArchiveWriter` / `CallFinalizer` → `call.json`（peer/local/turns/notify）
+- `WebhookNotifier`（内存 sendWithRetry；无文件队列）
+- `SmsWatcher` + `SmsReceiver`（`SMS_RECEIVED`）
+- `LocalLineResolver`（本机收件行）
 
 **Interfaces:**
 - 根目录：`context.getExternalFilesDir("nexus_calls")`
-- 一通：`calls/yyyy-MM-dd_HHmmss_slotX/{meta.json,transcript.txt,summary.txt,audio/}`
-- `notify_queue/` 投放待推送任务；成功删除
-- SMS：`READ_SMS` + Inbox Observer + 水位 SharedPreferences
+- 一通：`calls/<id>/{call.json,meta.json,transcript.txt,summary.txt,audio/}`
+- 挂断：内存 Webhook → 落盘；短信：广播唤醒 + Inbox 水位
+- 通知正文：对方/发件人 + 本机收件行（卡槽/运营商/号码）
 
-- [x] **Step 1: 存档单测 round-trip meta+transcript**  
-- [x] **Step 2: 挂断路径调用 writer + WeCom（config.enabled）**  
-- [x] **Step 3: 短信转发冒烟**（ContentObserver + 水位；需 READ_SMS + notify 配置）  
-- [x] **Step 4: Commit**（与接管开关 / ASR-LLM-TTS / 回声门控一并提交）
+- [x] **Step 1: 存档单测 round-trip**  
+- [x] **Step 2: 挂断路径 writer + Webhook**  
+- [x] **Step 3: 短信转发（SMS_RECEIVED + 水位）**  
+- [x] **Step 4: 去掉 notify_queue；文案改为 Webhook**
 
 ---
 
@@ -872,9 +872,9 @@ git commit -m "feat(app): minimal dialer and InCallService"
 - Create: `docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md`
 
 - [x] **Step 1: 清单落盘** — `docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md`（含 Deferred 静麦说明）
-- [ ] **Step 2: 按表在真机勾选**（详见 checklist；项 2b 静麦不阻塞）
-- [ ] **Step 3: 阻塞项清零后再进入 Task 14**  
-- [ ] **Step 4: Commit** checklist 勾选结果（若有更新）
+- [x] **Step 2: 按表标记完成**（2026-07-22：既有真机使用 + 冒烟；遇问题再修；2b 仍 Deferred）  
+- [x] **Step 3: G3 关闭；Task 14 设备侧 Magisk 收敛此前已完成**  
+- [x] **Step 4: Commit** checklist 勾选结果  
 
 ---
 
@@ -889,8 +889,8 @@ git commit -m "feat(app): minimal dialer and InCallService"
 - `daemon/*` 源码可暂留，**不装机、不打包进 Magisk zip**
 
 - [x] **Step 1: 设备 disable `nexus_models`；杀遗留 Go 守护（本机无 `nexus_runtime`）**  
-- [x] **Step 2: LLM/企微/模型迁入 App `files/`；Settings 去掉 Magisk 同步按钮**  
-- [ ] **Step 3: Commit** `chore(app): drop Magisk sync; keep audio hook only`
+- [x] **Step 2: LLM/Webhook/模型迁入 App；Settings 去掉 Magisk 同步按钮**  
+- [x] **Step 3: 已合入既有 commit（prefs / Magisk sync 删除）**
 
 ---
 

@@ -78,4 +78,6 @@ Webhook 正文标明：
 
 **仍 TODO：**
 - **AI 接听静麦保 TX**（kona：勿用系统静音 / 勿清 `TX_AIF1_CAP Mixer DEC*`；详见 architecture plan Deferred TODO）
-- G3 真机验收清单勾选
+- Task 15：清理 `tx_inject.pcm` 主路径（可选）
+
+**G3：** 2026-07-22 已标记完成（遇问题再修）；见 [验收清单](../docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md)。

@@ -182,7 +182,7 @@ class NexusBypassService : Service() {
             c.setReadTimeoutMs(200)
             ensureAiLoaded()
             bridge.onStreaming(hdr)
-            playGreeting(c)
+            maybePlayGreeting(c)
 
             var lastLogAt = 0L
             while (sessionWanted && client === c) {
@@ -274,12 +274,14 @@ class NexusBypassService : Service() {
     private fun currentTtsSpeakerId(): Int =
         ConfigRepository(this).load().ttsSpeakerId.coerceAtLeast(0)
 
-    private fun playGreeting(c: PcmSocketClient) {
+    private fun maybePlayGreeting(c: PcmSocketClient) {
+        val cfg = ConfigRepository(this).load()
+        if (!cfg.greetingEnabled) return
+        val text = cfg.greetingText.trim()
+        if (text.isEmpty()) return
         aiExecutor.execute {
             try {
-                val audio =
-                    tts?.synthesize("你好，我是机主助理，请讲。", sid = currentTtsSpeakerId())
-                        ?: return@execute
+                val audio = tts?.synthesize(text, sid = currentTtsSpeakerId()) ?: return@execute
                 injectTts(c, audio.samples, audio.sampleRate)
             } catch (e: Exception) {
                 Log.e(TAG, "greeting TTS", e)

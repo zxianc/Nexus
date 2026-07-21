@@ -264,22 +264,19 @@ ASR 文本 → LLM（DeepSeek，通话上下文）→ 回复文本
 ```text
 {archive_root}/
   calls/
-    2026-07-21_143022_slot0/     # 一通一目录，便于后续加音频
-      meta.json                  # 卡槽、号码、策略、起止时间
-      transcript.txt             # 对话文字（对等原 call_*.txt）
-      summary.txt                # 可选摘要
+    2026-07-21_143022_slot0/     # 一通一目录
+      call.json                  # 结构化真源：peer/local、turns、notify 状态
+      meta.json                  # 摘要字段（兼容快速查看）
+      transcript.txt             # 纯文本对话
+      summary.txt
       audio/                     # MVP 可空；后续再写
-        dl.pcm | dl.wav          # 对方下行（可选）
-        ul_tts.pcm | ul_tts.wav  # AI 注入（可选）
-        mix.wav                  # 对轨/混音成片（后续）
-  notify_queue/                  # 待推企微等（替代 .notify 文件约定）
 ```
 
 **原则：**
 
-* MVP：先保证 `meta.json` + `transcript` + 通知队列；`audio/` 目录创建即可，不阻塞上线。
-* 语音落地时：优先写 App 管得到的路径；注意通话期磁盘吞吐，可先落 PCM 再异步转码。
-* 配置/模型路径与存档根分离：模型仍可用 SAF 或 `/data/adb/nexus/models`（只读权重）；存档走本节。
+* 挂断：内存 Webhook（先发、失败重试、标记结果）→ 再写 `call.json`；**无** `notify_queue` 文件轮询。
+* 通知正文必须含「对方 / 本机收件行」（卡槽 + 运营商 + 本机号码）。
+* `audio/` 目录创建即可；配置在 SharedPreferences，模型在 `files/models` 或自选路径。
 
 ---
 
@@ -336,14 +333,14 @@ M4  停用 `nexus_runtime` / `nexus_models`（设备 disable 或卸载）；业�
 M5  清理：移除 tx_inject 主路径、旧 Magisk 同步 UI、遗留 Go 打包路径
 ```
 
-**现行决策（2026-07-21）：** 彻底抛弃 `nexus_runtime` / `nexus_models`，**只保留** Magisk 侧 `nexus_audio_hook`。模型、LLM、企微配置以 App `files/` 为真源；不做运行时 Magisk↔App 同步（一次性迁移脚本可保留）。`daemon/*` 源码可暂留仓库，但不再装机、不再开机拉起。
+**现行决策（2026-07-22）：** 彻底抛弃 `nexus_runtime` / `nexus_models`，**只保留** Magisk 侧 `nexus_audio_hook`。模型、LLM、Webhook 配置归 App（SharedPreferences）；不做运行时 Magisk↔App 同步。`daemon/*` 源码可暂留仓库，但不再装机、不再开机拉起。
 
 模块收敛目标（终态）：
 
 * 保留：`nexus_audio_hook`（Zygisk HAL 旁路）；
-* 模型：`com.nexus.assistant/files/models/{sense-voice,vits-zh-ll}`；
-* 配置：App SharedPreferences `nexus_config`（含 LLM key、企微 webhook、双卡策略）；
-* 移除：`nexus_runtime`、`nexus_models`、WebUI、Magisk 同步按钮。
+* 模型：默认 `files/models/…`，可分 STT/TTS 选文件；
+* 配置：SharedPreferences `nexus_config`（LLM、Webhook URL、双卡、speaker）；
+* 移除：`nexus_runtime`、`nexus_models`、WebUI、Magisk 同步、文件版 `notify_queue`。
 
 ---
 

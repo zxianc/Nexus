@@ -91,6 +91,10 @@ class ConfigRepository(context: Context) {
             sttModelPath = prefs.getString(KEY_STT_MODEL_PATH, null),
             ttsModelPath = prefs.getString(KEY_TTS_MODEL_PATH, null),
             ttsSpeakerId = prefs.getInt(KEY_TTS_SPEAKER_ID, 0).coerceAtLeast(0),
+            greetingEnabled = prefs.getBoolean(KEY_GREETING_ENABLED, false),
+            greetingText =
+                prefs.getString(KEY_GREETING_TEXT, DEFAULT_GREETING_TEXT)
+                    ?: DEFAULT_GREETING_TEXT,
             modelDir = prefs.getString(KEY_MODEL_DIR, null),
             archiveSafUri = prefs.getString(KEY_ARCHIVE_SAF_URI, null),
         )
@@ -121,6 +125,11 @@ class ConfigRepository(context: Context) {
         putOptional(ed, KEY_STT_MODEL_PATH, cfg.sttModelPath)
         putOptional(ed, KEY_TTS_MODEL_PATH, cfg.ttsModelPath)
         ed.putInt(KEY_TTS_SPEAKER_ID, cfg.ttsSpeakerId.coerceAtLeast(0))
+        ed.putBoolean(KEY_GREETING_ENABLED, cfg.greetingEnabled)
+        ed.putString(
+            KEY_GREETING_TEXT,
+            cfg.greetingText.ifBlank { DEFAULT_GREETING_TEXT },
+        )
         putOptional(ed, KEY_MODEL_DIR, cfg.modelDir)
         putOptional(ed, KEY_ARCHIVE_SAF_URI, cfg.archiveSafUri)
         ed.commit()
@@ -149,6 +158,8 @@ class ConfigRepository(context: Context) {
         private const val KEY_STT_MODEL_PATH = "stt_model_path"
         private const val KEY_TTS_MODEL_PATH = "tts_model_path"
         private const val KEY_TTS_SPEAKER_ID = "tts_speaker_id"
+        private const val KEY_GREETING_ENABLED = "greeting_enabled"
+        private const val KEY_GREETING_TEXT = "greeting_text"
         private const val KEY_MODEL_DIR = "model_dir"
         private const val KEY_ARCHIVE_SAF_URI = "archive_saf_uri"
 
