@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <atomic>
 #include <cerrno>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -17,23 +16,9 @@
 #include "dobby.h"
 #include "pcm_frame.h"
 
-#ifndef NEXUS_UDS_FRAMED
-#define NEXUS_UDS_FRAMED 1
-#endif
-/*
- * File TX inject (tx_inject.pcm) is RETIRED as the primary path.
- * App injects PCM_UL frames over UDS. Keep the loader behind this macro only
- * for emergency rollback builds (NEXUS_TX_INJECT_FILE=1); never enable by default.
- */
-#ifndef NEXUS_TX_INJECT_FILE
-#define NEXUS_TX_INJECT_FILE 0
-#endif
-
 #define PCM_SOCK_PATH "/data/vendor/ai_hook/pcm.sock"
 /* Abstract UDS name (no leading @ in C; sun_path[0]=0). App uses Namespace.ABSTRACT. */
 #define PCM_SOCK_ABSTRACT "nexus_pcm"
-#define TX_INJECT_PATH "/data/vendor/ai_hook/tx_inject.pcm"
-#define TX_TONE_PATH "/data/vendor/ai_hook/tx_tone"
 #define APCM_MAGIC 0x4D435041u /* 'APCM' LE */
 /* APCM hdr[12:14] stream kind (u16 LE) */
 enum {
@@ -46,7 +31,7 @@ enum {
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// 1.D': DL-only incall-rec for STT; dump + UDS until hangup.
+// DL-only incall-rec → framed UDS PCM_DL for App STT.
 
 using pcm_io_fn_t = int (*)(void *pcm, void *data, unsigned int count);
 using voice_fn1_t = int (*)(void *adev);
@@ -152,7 +137,7 @@ static bool is_voice_ul_mic(void *pcm) {
     }
     void *dl = g_dl_rec_pcm.load();
     if (dl != nullptr && pcm == dl) {
-        return false; // never mute Round-7 DL dump
+        return false; // never mute DL capture used for STT
     }
     void *ul = g_voice_ul_pcm.load();
     if (ul != nullptr) {
@@ -217,14 +202,6 @@ static int set_mixer_int(void *mixer, mixer_get_ctl_fn_t get_ctl, mixer_ctl_set_
     return rc;
 }
 
-// NOTE: Do NOT zero TX_AIF1_CAP Mixer DEC* — on kona that tears down the whole
-// voice UL mix and kills Incall_Music TX as well (CTRL_MUTE then → silence).
-// True "mute mic, keep TTS" still needs a calibrated codec gain that is not on
-// the shared UL mix bus; tracked as TODO (静麦保 TX).
-static void apply_mixer_mic_mute(bool mute) {
-    (void)mute;
-}
-
 /** Undo a previous bad mute that left TX_AIF1_CAP Mixer DEC1=0 (no UL / no TTS). */
 static void repair_voice_ul_mixers() {
     auto mixer_open = (mixer_open_fn_t)resolve_sym("libtinyalsa.so", "mixer_open");
@@ -279,25 +256,7 @@ static bool load_incall_music_config(struct pcm_config *out) {
     return false;
 }
 
-// Debug: ~880Hz tone when /data/vendor/ai_hook/tx_tone exists.
-static void fill_tone_s16(int16_t *dst, int frames, int channels, unsigned rate, double *phase) {
-    const double freq = 880.0;
-    const double two_pi = 6.283185307179586;
-    const double step = two_pi * freq / (double)rate;
-    const int16_t amp = 6000;
-    for (int i = 0; i < frames; ++i) {
-        int16_t s = (int16_t)(std::sin(*phase) * (double)amp);
-        *phase += step;
-        if (*phase > two_pi) {
-            *phase -= two_pi;
-        }
-        for (int c = 0; c < channels; ++c) {
-            dst[i * channels + c] = s;
-        }
-    }
-}
-
-// On-demand TX: drop raw s16le PCM (match incall-music rate/ch) onto TX_INJECT_PATH.
+/** Queue of UL PCM from App UDS frames → incall-music pcm_write. */
 struct TxInjectQ {
     pthread_mutex_t mu;
     unsigned char *data;
@@ -326,37 +285,6 @@ static void txq_destroy(TxInjectQ *q) {
     pthread_mutex_destroy(&q->mu);
 }
 
-static void txq_try_load_file(TxInjectQ *q) {
-    struct stat st {};
-    if (stat(TX_INJECT_PATH, &st) != 0 || st.st_size <= 0) {
-        return;
-    }
-    int fd = open(TX_INJECT_PATH, O_RDONLY);
-    if (fd < 0) {
-        return;
-    }
-    auto *buf = (unsigned char *)malloc((size_t)st.st_size);
-    if (!buf) {
-        close(fd);
-        return;
-    }
-    ssize_t n = read(fd, buf, (size_t)st.st_size);
-    close(fd);
-    // consume file so we don't loop the same clip
-    unlink(TX_INJECT_PATH);
-    if (n <= 0) {
-        free(buf);
-        return;
-    }
-    pthread_mutex_lock(&q->mu);
-    txq_clear_locked(q);
-    q->data = buf;
-    q->len = (size_t)n;
-    q->off = 0;
-    pthread_mutex_unlock(&q->mu);
-    LOGI("1.E loaded tx_inject.pcm bytes=%zd", n);
-}
-
 static bool txq_pull(TxInjectQ *q, void *dst, size_t need) {
     pthread_mutex_lock(&q->mu);
     size_t avail = (q->off < q->len) ? (q->len - q->off) : 0;
@@ -372,7 +300,7 @@ static bool txq_pull(TxInjectQ *q, void *dst, size_t need) {
     }
     if (q->off >= q->len) {
         txq_clear_locked(q);
-        LOGI("1.E tx_inject drain done");
+        LOGI("1.E UL queue drain done");
     }
     pthread_mutex_unlock(&q->mu);
     return true;
@@ -424,7 +352,6 @@ static void uds_drop_client(int fd, TxInjectQ *inj) {
         g_uds_hdr_sent.store(false);
     }
     g_ai_mute_mic.store(false);
-    apply_mixer_mic_mute(false);
     if (inj) {
         pthread_mutex_lock(&inj->mu);
         txq_clear_locked(inj);
@@ -440,7 +367,7 @@ static void uds_dispatch_frame(uint8_t type, const uint8_t *payload, size_t len,
     case kTypeCtrlMute: {
         bool on = len > 0 && payload[0] != 0;
         g_ai_mute_mic.store(on);
-        // pcm_read gate only — mixer DEC mute removed (broke Incall_Music TX).
+        // Soft-mute: zero voice UL pcm_read only (not mixer DEC — that kills TTS TX).
         LOGI("CTRL_MUTE %d", (int)on);
         break;
     }
@@ -453,7 +380,6 @@ static void uds_dispatch_frame(uint8_t type, const uint8_t *payload, size_t len,
     case kTypeCtrlSession:
         if (len > 0 && payload[0] == 0) {
             g_ai_mute_mic.store(false);
-            apply_mixer_mic_mute(false);
             pthread_mutex_lock(&inj->mu);
             txq_clear_locked(inj);
             pthread_mutex_unlock(&inj->mu);
@@ -540,26 +466,7 @@ static void uds_poll_client_frames(UdsFrameParser *parser, TxInjectQ *inj) {
     }
 }
 
-static int open_dump_fd() {
-    // Prefer vendor_data_file path; HAL needs sepolicy allow (see sepolicy.rule).
-    const char *paths[] = {"/data/vendor/ai_hook/ai_dl.pcm", "/data/vendor/ai_hook/ai_incall.pcm",
-                           "/data/local/tmp/ai_dl.pcm"};
-    for (const char *p : paths) {
-        // Existing pre-created file (chmod 666) first — avoids create permission.
-        int fd = open(p, O_WRONLY | O_TRUNC);
-        if (fd < 0) {
-            fd = open(p, O_CREAT | O_TRUNC | O_WRONLY, 0666);
-        }
-        if (fd >= 0) {
-            LOGI("DL dump fd=%d path=%s", fd, p);
-            return fd;
-        }
-        LOGI("DL open(%s) failed errno=%d", p, errno);
-    }
-    return -1;
-}
-
-// 1.D: HAL is UDS server; Go pcm_recv / App connect as clients.
+// 1.D: HAL is UDS server; App connects as client (framed PCM).
 static void put_u32_le(unsigned char *p, unsigned v) {
     p[0] = (unsigned char)(v);
     p[1] = (unsigned char)(v >> 8);
@@ -626,7 +533,6 @@ static void uds_on_accept(int cfd) {
     int old = g_uds_client.exchange(cfd);
     g_uds_hdr_sent.store(false);
     g_ai_mute_mic.store(false);
-    apply_mixer_mic_mute(false);
     if (old >= 0) {
         close(old);
     }
@@ -651,7 +557,7 @@ static void *uds_accept_loop(void *arg) {
 }
 
 static void *uds_server_thread(void *) {
-    // 1) Filesystem sock — Go/ai_call transitional clients
+    // 1) Filesystem sock (legacy path name; App prefers abstract @nexus_pcm)
     unlink(PCM_SOCK_PATH);
     int fs_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fs_fd >= 0) {
@@ -789,16 +695,12 @@ static void *round7_incall_thread(void *) {
         LOGI("Round-7 pcm_start rc=%d", pcm_start(pcm));
     }
 
-    int dump_fd = open_dump_fd();
     unsigned bytes = cfg.period_size * cfg.channels * 2;
     void *buf = malloc(bytes);
     if (!buf) {
         {
             void *expected = pcm;
             g_dl_rec_pcm.compare_exchange_strong(expected, nullptr);
-        }
-        if (dump_fd >= 0) {
-            close(dump_fd);
         }
         pcm_close(pcm);
         mixer_close(mixer);
@@ -807,7 +709,6 @@ static void *round7_incall_thread(void *) {
 
     int hits = 0, nonzero = 0;
     int max_l = 0, max_r = 0;
-    size_t total_bytes = 0;
     size_t uds_bytes = 0;
     while (g_in_voice.load()) {
         int rc = pcm_read(pcm, buf, bytes);
@@ -816,15 +717,8 @@ static void *round7_incall_thread(void *) {
             break;
         }
         hits++;
-        if (dump_fd >= 0) {
-            ssize_t w = write(dump_fd, buf, bytes);
-            if (w > 0) {
-                total_bytes += (size_t)w;
-            }
-        }
         int uds_fd = g_uds_client.load();
         if (uds_fd >= 0 && uds_send_hdr_if_needed(uds_fd, cfg.rate, cfg.channels, APCM_KIND_DL)) {
-#if NEXUS_UDS_FRAMED
             size_t frame_cap = 4 + (size_t)bytes;
             auto *frame = (uint8_t *)malloc(frame_cap);
             if (frame) {
@@ -834,9 +728,6 @@ static void *round7_incall_thread(void *) {
                 }
                 free(frame);
             }
-#else
-            uds_bytes += uds_send_all(uds_fd, buf, bytes);
-#endif
         }
         auto *p = (const int16_t *)buf;
         int frames = (int)(bytes / 4); // stereo s16
@@ -865,14 +756,11 @@ static void *round7_incall_thread(void *) {
         }
     }
 
-    LOGI("1.D' DL DONE hits=%d nz=%d maxL=%d maxR=%d dumped=%zu uds=%zu rate=%u ch=2 s16le", hits,
-         nonzero, max_l, max_r, total_bytes, uds_bytes, cfg.rate);
+    LOGI("1.D' DL DONE hits=%d nz=%d maxL=%d maxR=%d uds=%zu rate=%u ch=2 s16le", hits, nonzero,
+         max_l, max_r, uds_bytes, cfg.rate);
     {
         void *expected = pcm;
         g_dl_rec_pcm.compare_exchange_strong(expected, nullptr);
-    }
-    if (dump_fd >= 0) {
-        close(dump_fd);
     }
     free(buf);
     pcm_close(pcm);
@@ -900,7 +788,7 @@ static void *tx_incall_music_thread(void *) {
         return nullptr;
     }
 
-    LOGI("1.E start incall-music uplink (test tone)");
+    LOGI("1.E start incall-music uplink");
     if (fn_start_incall_music) {
         int rc = fn_start_incall_music(platform);
         LOGI("platform_start_incall_music_usecase rc=%d", rc);
@@ -981,29 +869,16 @@ static void *tx_incall_music_thread(void *) {
     TxInjectQ inj {};
     txq_init(&inj);
     UdsFrameParser parser {};
-    double phase = 0;
     int hits = 0;
     size_t total = 0;
     size_t audible = 0; // non-silence periods
-    LOGI("1.E TX mode: framed UDS UL; file_inject=%d tone_flag=%s", NEXUS_TX_INJECT_FILE, TX_TONE_PATH);
+    LOGI("1.E TX mode: framed UDS UL only");
 
     while (g_in_voice.load()) {
-#if NEXUS_TX_INJECT_FILE
-        if ((hits % 25) == 0) {
-            txq_try_load_file(&inj);
-        }
-#endif
         uds_poll_client_frames(&parser, &inj);
-        bool tone = (access(TX_TONE_PATH, F_OK) == 0);
-        bool got = false;
-        if (tone) {
-            fill_tone_s16(buf, (int)cfg.period_size, (int)cfg.channels, cfg.rate, &phase);
-            got = true;
-        } else {
-            got = txq_pull(&inj, buf, frame_bytes);
-            if (!got) {
-                memset(buf, 0, frame_bytes);
-            }
+        bool got = txq_pull(&inj, buf, frame_bytes);
+        if (!got) {
+            memset(buf, 0, frame_bytes);
         }
         int rc = pcm_write(pcm, buf, frame_bytes);
         if (rc < 0) {
@@ -1016,15 +891,14 @@ static void *tx_incall_music_thread(void *) {
             audible++;
         }
         if (hits <= 8 || (hits % 200) == 0) {
-            LOGI("1.E pcm_write #%d bytes=%u total=%zu audible_periods=%zu tone=%d", hits, frame_bytes,
-                 total, audible, (int)tone);
+            LOGI("1.E pcm_write #%d bytes=%u total=%zu audible_periods=%zu", hits, frame_bytes, total,
+                 audible);
         }
     }
 
     LOGI("1.E TX DONE hits=%d written=%zu audible_periods=%zu", hits, total, audible);
     uds_parser_reset(&parser);
     g_ai_mute_mic.store(false);
-    apply_mixer_mic_mute(false);
     txq_destroy(&inj);
     free(buf);
     pcm_close(pcm);

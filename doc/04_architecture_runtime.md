@@ -2,7 +2,7 @@
 
 **日期：** 2026-07-19（正文多为 Go 时代）  
 **2026-07-22 说明：** 业务已迁入 App；现行总览见 [`00_framework_overview.md`](00_framework_overview.md)。  
-**TX：** App 用 UDS `PCM_UL`；`tx_inject.pcm` 不再作为主路径（HAL `NEXUS_TX_INJECT_FILE=0`）。下文 `tx_inject` / `ai_call` 描述保留作历史对照。
+**TX：** App 用 UDS `PCM_UL`；HAL 已移除 `tx_inject.pcm` / 测试音 / DL 文件 dump。下文 `tx_inject` / `ai_call` 描述保留作历史对照。
 
 **目标机：** OnePlus 8T / 骁龙 865 / LineageOS + Magisk Zygisk  
 **模块：** `nexus_audio_hook`（Zygisk）

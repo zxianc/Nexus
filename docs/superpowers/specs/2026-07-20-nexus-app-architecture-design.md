@@ -331,8 +331,9 @@ M1  HAL：双工 UL 帧注入 + 软静音门控；保留 tx_inject 回滚开关
 M2  过渡：Go ai_call 仍可读 DL（若需临时兼容裸流，仅过渡分支）；或 App 并行读流做 STT 对照
 M3  App MVP：InCallService + 策略 + LLM + sherpa + 通知/存档
 M4  停用 `nexus_runtime` / `nexus_models`（设备 disable 或卸载）；业务仅 App
-M5  清理：移除 tx_inject 主路径、旧 Magisk 同步 UI、遗留 Go 打包路径
+M5  清理：tx_inject 主路径退役（宏回滚保留）；旧 Magisk 同步 UI 已删
 ```
+
 
 **现行决策（2026-07-22）：** 彻底抛弃 `nexus_runtime` / `nexus_models`，**只保留** Magisk 侧 `nexus_audio_hook`。模型、LLM、Webhook 配置归 App（SharedPreferences）；不做运行时 Magisk↔App 同步。`daemon/*` 源码可暂留仓库，但不再装机、不再开机拉起。
 

@@ -12,8 +12,8 @@
 3. **通话 PCM：** incall-rec（`pcm_read` card0 **device 23** @ 48kHz s16le）
    - **已验证：** UL+DL 混合（听验/人模式存档）
    - **AI 模式：** **DL-only** → UDS → STT；文本存档已做；语音 `mix` TODO  
-4. **UDS（主路径）：** HAL listen `pcm.sock` / abstract `@nexus_pcm`；App `com.nexus.assistant` 帧化双工（PCM_DL / PCM_UL）  
-5. **TX：** App 经 UDS 发 `PCM_UL`；**`tx_inject.pcm` 文件轮询已退役**（`NEXUS_TX_INJECT_FILE=0`，仅紧急回滚可编译打开）  
+4. **UDS：** HAL listen `pcm.sock` / abstract `@nexus_pcm`；App 帧化双工（PCM_DL / PCM_UL）  
+5. **TX：** 仅 UDS `PCM_UL` 队列 → incall-music（无 `tx_inject.pcm` / 测试音文件）  
 6. sepolicy：`hal_audio_default` 的 `execmem` + `vendor_data_file` + UDS（含 `untrusted_app`）
 
 ## 目录
@@ -67,5 +67,4 @@ adb shell "su -c 'ls -la /data/vendor/ai_hook/pcm.sock'"
 | 新旧模块并存 | Magisk 卸载 `ai_audio_hook` 后再装本模块 |
 | `dlopen` namespace 拒绝 | 载荷必须在 `/vendor/lib` |
 | Dobby maps SIGBUS | HAL 侧用 `dlsym`，勿 `DobbySymbolResolver` |
-| dump `errno=13` | sepolicy 写 `vendor_data_file`；预建文件 chmod 666 |
 | PowerShell `$(pidof)` | 勿让 PS 展开；用 `adb shell su -c "..."` 或外层单引号 |

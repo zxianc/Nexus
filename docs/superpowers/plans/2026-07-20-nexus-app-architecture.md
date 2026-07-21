@@ -897,14 +897,15 @@ git commit -m "feat(app): minimal dialer and InCallService"
 ### Task 15: M5 — 清理 tx_inject 主路径与文档
 
 **Files:**
-- `audio_hook_hal.cpp` — `NEXUS_TX_INJECT_FILE=0`（主路径关；宏保留紧急回滚）
-- `zygisk_module/doc/README.md`、`doc/00_framework_overview.md`、`doc/04_architecture_runtime.md` 头注
+- `audio_hook_hal.cpp` — 删除 `tx_inject` / tone / DL dump / 裸 UDS / 空 mixer mute（无宏兜底）
+- `post-fs-data.sh` / `sepolicy.rule` — 去掉 dump 预建文件
+- `zygisk_module/doc/README.md`、`doc/00_framework_overview.md`
 
-**确认：** App 仅 UDS `PCM_UL`；`daemon/ai_call` 仍可写 `tx_inject` 但默认不装机。
+**确认：** App 仅 UDS 帧化 `PCM_UL` / `PCM_DL`。
 
-- [x] **Step 1: 确认 App 不写 `tx_inject.pcm`；HAL 默认不轮询文件**  
+- [x] **Step 1: 确认 App 不写 `tx_inject.pcm`；HAL 删除文件注入代码**  
 - [x] **Step 2: 文档与 Zygisk README 对齐**  
-- [x] **Step 3: Commit** `chore: retire tx_inject.pcm primary path and update docs`
+- [x] **Step 3: Commit**（含代码删除，见后续 chore）
 
 ---
 
