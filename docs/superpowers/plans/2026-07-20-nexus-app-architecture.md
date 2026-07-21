@@ -871,22 +871,10 @@ git commit -m "feat(app): minimal dialer and InCallService"
 **Files:**
 - Create: `docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md`
 
-- [ ] **Step 1: 按表在真机勾选**
-
-| # | 项 | 结果 |
-|---|----|------|
-| 1 | 默认电话授予后 AI 卡自动接听 | |
-| 1b | 关闭 Nexus 接管后系统电话可正常接听；再开启后 AI 卡可再自动接 | |
-| 2 | 对方听到 TTS；环境音软静音（**Deferred TODO**，暂不阻塞） | |
-| 3 | 切人工后对方听到 mic | |
-| 4 | 挂断后存档目录有 transcript | |
-| 5 | 企微收到通话摘要（若启用） | |
-| 6 | 短信转发（若启用） | |
-| 7 | 拒绝默认电话时 Settings 提示且不侧门接听 | |
-| 8 | 非通话录音无异常 | |
-
-- [ ] **Step 2: 全部通过后再进入 Task 14**  
-- [ ] **Step 3: Commit** checklist 文件
+- [x] **Step 1: 清单落盘** — `docs/superpowers/plans/checklists/2026-07-20-app-mvp-acceptance.md`（含 Deferred 静麦说明）
+- [ ] **Step 2: 按表在真机勾选**（详见 checklist；项 2b 静麦不阻塞）
+- [ ] **Step 3: 阻塞项清零后再进入 Task 14**  
+- [ ] **Step 4: Commit** checklist 勾选结果（若有更新）
 
 ---
 
