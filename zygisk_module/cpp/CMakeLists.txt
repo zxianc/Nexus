@@ -3,8 +3,8 @@ project(ai_audio_zygisk)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# Dobby (vendored under magisk_module, pinned known-good commit)
-set(DOBBY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../magisk_module/cpp/Dobby)
+# Dobby (vendored under zygisk_module/third_party)
+set(DOBBY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/Dobby)
 set(DOBBY_GENERATE_SHARED OFF CACHE BOOL "" FORCE)
 set(DOBBY_DEBUG OFF CACHE BOOL "" FORCE)
 add_subdirectory(${DOBBY_DIR} ${CMAKE_CURRENT_BINARY_DIR}/dobby_build)

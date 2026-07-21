@@ -6,7 +6,7 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Port of daemon/ai_call stereoS16ToMono16k: downsample by integer factor (48k→16k).
+ * Downsample stereo/mono s16 PCM by integer factor (e.g. 48k→16k).
  */
 object AudioResampler {
     fun stereoS16ToMono16k(pcm: ByteArray, channels: Int, rate: Int): ShortArray {

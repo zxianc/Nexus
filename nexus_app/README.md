@@ -1,25 +1,18 @@
 # Nexus Assistant (`nexus_app`)
 
-Kotlin sources for the App-side of the Zygisk ↔ App architecture.
+Kotlin App：默认电话接管、ASR/TTS/LLM、存档、Webhook、Settings。  
+与 [`zygisk_module/`](../zygisk_module/) 经帧化 UDS（`@nexus_pcm`）双工 PCM。
 
 ## Build
 
-SDK path is in `local.properties` (gitignored). On this machine: `E:\Android\Sdk`.
+SDK 路径写在 `local.properties`（不进 git）。
 
 ```bat
 gradlew.bat :app:test
 gradlew.bat :app:assembleDebug
 ```
 
-`app/src/androidMain/` is merged into the main Android source set (LocalSocket / SmokeActivity).
+## 文档
 
-## Layout
-
-| Path | Role |
-|------|------|
-| `app/src/main/java/.../protocol` | APCM + framed UDS codec (shared with HAL constants) |
-| `app/src/main/java/.../config` | JSON config true source |
-| `app/src/androidMain/java/.../uds` | `PcmSocketClient` |
-| `app/src/androidMain/java/.../ui` | `SmokeActivity` for G1 UDS smoke |
-
-See `docs/superpowers/plans/2026-07-20-nexus-app-architecture.md`.
+- 总览：[`doc/00_framework_overview.md`](../doc/00_framework_overview.md)
+- 架构：[`docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md`](../docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md)

@@ -4,8 +4,9 @@
 **机型：** OnePlus 8T / LineageOS + Magisk  
 **模块：** 仅 `nexus_audio_hook`（Zygisk HAL）；业务在 Kotlin App `com.nexus.assistant`
 
-细节实现（HAL Hook）见 [`04_architecture_runtime.md`](04_architecture_runtime.md)（文中 Go 路径为历史）。  
-App 架构设计见 [`docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md`](../docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md)。
+HAL 模块操作见 [`zygisk_module/doc/README.md`](../zygisk_module/doc/README.md)。  
+App 架构设计见 [`docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md`](../docs/superpowers/specs/2026-07-20-nexus-app-architecture-design.md)。  
+文档索引：[`README.md`](README.md)。
 
 ---
 
@@ -28,8 +29,6 @@ App 架构设计见 [`docs/superpowers/specs/2026-07-20-nexus-app-architecture-d
 |------|--------|
 | **`nexus_audio_hook`** | 通话 PCM 旁路 + UL 帧注入；Magisk 侧唯一模块 |
 | **`com.nexus.assistant`** | 默认电话接管、策略、ASR/TTS/LLM、存档、Webhook、Settings |
-
-**已弃用（勿再装 / 已 disable）：** `nexus_runtime`、`nexus_models`，以及 `ai_call` / `nexus_engine` / `nexus_webui` / `nexus_callpolicy` / `nexus_notify`。
 
 配置真源：App SharedPreferences `nexus_config`（Settings 可改）。  
 STT/TTS 可分别选 `.onnx`（同目录自动带附属文件）；默认 `files/models/sense-voice` 与 `vits-zh-ll`。TTS Speaker ID 可配。
@@ -68,15 +67,8 @@ Webhook 正文标明：
 
 ## 5. Magisk
 
-| 模块 | 状态 |
-|------|------|
-| `nexus_audio_hook` | **保留** |
-| `nexus_models` | 弃用（设备可 `touch …/disable`） |
-| `nexus_runtime` | 弃用（勿安装） |
-
-一次性从旧 Magisk 配置迁移：`nexus_app/scripts/migrate_magisk_config_once.py`。
-
-**TX 路径：** App → UDS `PCM_UL`（HAL 已移除 `tx_inject.pcm` / 测试音等旧路径）。
+仅安装 **`nexus_audio_hook`**（本仓库 `zygisk_module/`）。  
+**TX：** App → UDS `PCM_UL`（无文件注入）。
 
 **仍 TODO：**
 - **AI 接听静麦保 TX**（kona：勿用系统静音 / 勿清 `TX_AIF1_CAP Mixer DEC*`；详见 architecture plan Deferred TODO）

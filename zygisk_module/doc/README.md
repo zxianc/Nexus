@@ -1,6 +1,6 @@
 # Zygisk 模块操作手册（Nexus Audio Hook）
 
-配套文档：[`doc/plan.md`](../../doc/plan.md)、[`doc/03_pcm_hook_next.md`](../../doc/03_pcm_hook_next.md)、[`doc/dev_journal.md`](../../doc/dev_journal.md)。
+配套文档：[`doc/00_framework_overview.md`](../../doc/00_framework_overview.md)、[`doc/README.md`](../../doc/README.md)。
 
 **模块 ID：** `nexus_audio_hook`（原 `ai_audio_hook`，v2.2 起更名；装新包前请卸载旧模块）。
 

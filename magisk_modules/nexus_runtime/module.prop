@@ -1,6 +1,0 @@
-id=nexus_runtime
-name=Nexus Runtime
-version=v0.1
-versionCode=1
-author=Nexus
-description=ai_call + nexus_engine + boot start. Pair with nexus_models and nexus_audio_hook.

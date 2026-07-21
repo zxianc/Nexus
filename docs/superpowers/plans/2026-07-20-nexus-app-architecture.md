@@ -20,7 +20,7 @@
 - 软静音：**禁止**对所有 `pcm_read` memset；须 `is_voice_ul_mic(pcm)` 门控
 - 默认电话方案 A：MVP 拨号/来电/通话中；拒绝授权则 AI 接听不可用
 - 存档：App 自管，**不写** `/data/vendor/ai_hook/calls`；一通一目录，预留 `audio/`
-- **禁止**在 §4.5 对等验收前删除 `daemon/*` 或停掉 `nexus_runtime` 开机脚本
+- ~~禁止删除 `daemon/*`~~ — **已废止**（2026-07-22 仓库已删 Go / runtime / models）
 - 过渡期 App 与 `ai_call` **勿同时**连同一 `pcm.sock`
 - UDS 可达失败备选顺序：sepolicy → abstract UDS → root companion（最后手段）
 - 机型基线：OnePlus 8T / LineageOS + Magisk（与 `doc/00_framework_overview.md` 一致）
@@ -377,7 +377,7 @@ if (n > 0) {
 
 - [ ] **Step 3: 重新编译并刷入 `nexus_audio_hook` 模块**
 
-按 `zygisk_module` / `magisk_modules` 现行打包流程编译 `libai_hook.so` 并安装模块，重启或 reinject。
+按 `zygisk_module` 打包流程编译 `libai_hook.so` 并安装模块，重启或 reinject。
 
 - [ ] **Step 4: 设备冒烟（root）——确认帧头**
 
@@ -787,7 +787,7 @@ git commit -m "feat(app): minimal dialer and InCallService"
 
 **Interfaces:**
 - Consumes: `ApcmHeader`、`ByteArray` PCM_DL
-- Produces: `fun stereoS16ToMono16k(pcm: ByteArray, channels: Int, rate: Int): ShortArray`（可移植 `daemon/ai_call` 逻辑）
+- Produces: `fun stereoS16ToMono16k(pcm: ByteArray, channels: Int, rate: Int): ShortArray`
 - `EnergyVad`：对标现网能量 VAD，输出切句 `ShortArray` 给 ASR
 
 - [ ] **Step 1: 单测** — 已知 48k stereo 正弦 → 16k mono 长度公式断言  
@@ -882,15 +882,12 @@ git commit -m "feat(app): minimal dialer and InCallService"
 
 **决策（2026-07-21）：** 不等 G3 签字，设备侧已弃用 `nexus_models`/`nexus_runtime`；配置与模型归 App。
 
-**Files:**
-- Modify: `doc/00_framework_overview.md` — App 闭环 + 仅 `nexus_audio_hook`
-- App：删除 Magisk 同步 UI（`ModelSync`/`LlmKeySync`）；`ModelPaths` 只解析 App `files/models`
-- 一次性迁移：`nexus_app/scripts/migrate_magisk_config_once.py`（PC 侧合并后 push）
-- `daemon/*` 源码可暂留，**不装机、不打包进 Magisk zip**
+**Files:** App prefs / 去 Magisk 同步；`doc/00`；一次性迁移脚本可仍用。  
+**仓库（2026-07-22）：** 已删 `daemon/*`、`magisk_modules/*`；Dobby → `zygisk_module/third_party/Dobby`。
 
-- [x] **Step 1: 设备 disable `nexus_models`；杀遗留 Go 守护（本机无 `nexus_runtime`）**  
+- [x] **Step 1: 设备 disable `nexus_models`；杀遗留 Go 守护**  
 - [x] **Step 2: LLM/Webhook/模型迁入 App；Settings 去掉 Magisk 同步按钮**  
-- [x] **Step 3: 已合入既有 commit（prefs / Magisk sync 删除）**
+- [x] **Step 3: 仓库删除 Go / Magisk 业务模块源码**
 
 ---
 

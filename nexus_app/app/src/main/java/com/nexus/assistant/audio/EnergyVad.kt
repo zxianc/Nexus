@@ -8,7 +8,7 @@ data class Utterance(
 )
 
 /**
- * Energy VAD ported from daemon/ai_call/vad.go (16 kHz mono).
+ * Energy VAD for 16 kHz mono PCM.
  */
 class EnergyVad(
     private val cfg: Config = Config(),

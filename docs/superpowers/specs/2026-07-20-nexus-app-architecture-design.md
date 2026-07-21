@@ -95,7 +95,7 @@
 
 客户端 `connect` 成功后，**不保证立刻有头**。现网行为：HAL 在下行 `pcm_read` 开始推流时发送一次 16 字节 APCM 头；重连后 `g_uds_hdr_sent` 复位，下一通/下一次推流再发。
 
-布局与 `audio_hook_hal.cpp` / `daemon/ai_call/uds.go` 一致：
+布局与 `audio_hook_hal.cpp` / App `PcmFrame` 协议一致：
 
 ```text
 0               4               8              10              12              14
@@ -335,7 +335,8 @@ M5  清理：tx_inject 主路径退役（宏回滚保留）；旧 Magisk 同步 
 ```
 
 
-**现行决策（2026-07-22）：** 彻底抛弃 `nexus_runtime` / `nexus_models`，**只保留** Magisk 侧 `nexus_audio_hook`。模型、LLM、Webhook 配置归 App（SharedPreferences）；不做运行时 Magisk↔App 同步。`daemon/*` 源码可暂留仓库，但不再装机、不再开机拉起。
+**现行决策（2026-07-22）：** 只保留 Magisk 侧 `nexus_audio_hook`。模型、LLM、Webhook 归 App。  
+**仓库清理（2026-07-22）：** 已删除 `daemon/*`、`magisk_modules/*` 及旧 Magisk 实验模块（Dobby 迁至 `zygisk_module/third_party/Dobby`）。
 
 模块收敛目标（终态）：
 

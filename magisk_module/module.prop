@@ -1,6 +1,0 @@
-id=nexus_audio_hook
-name=Nexus Audio Hook (audioserver) [legacy tree]
-version=v1.0
-versionCode=1
-author=Developer
-description=LEGACY — use zygisk_module / nexus_audio_hook. Old audioserver overlay experiment.
