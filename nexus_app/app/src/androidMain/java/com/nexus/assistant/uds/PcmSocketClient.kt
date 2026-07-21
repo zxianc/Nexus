@@ -5,9 +5,12 @@ import android.net.LocalSocketAddress
 import android.util.Log
 import com.nexus.assistant.protocol.ApcmHeader
 import com.nexus.assistant.protocol.FrameReader
+import com.nexus.assistant.protocol.PcmFrame
 import com.nexus.assistant.protocol.PcmProtocol
 import com.nexus.assistant.protocol.ProtocolException
+import java.io.IOException
 import java.io.InputStream
+import java.net.SocketTimeoutException
 
 /**
  * Framed UDS client. Prefers abstract `@nexus_pcm` (avoids vendor sock_file SELinux);
@@ -85,6 +88,38 @@ class PcmSocketClient(
 
     fun sendPcmUl(pcm: ByteArray) {
         writeFrame(PcmProtocol.TYPE_PCM_UL, pcm)
+    }
+
+    fun setReadTimeoutMs(timeoutMs: Int) {
+        socket?.soTimeout = timeoutMs
+    }
+
+    /**
+     * Read one socket chunk and decode frames. Empty list on read timeout (keeps session alive).
+     */
+    fun pollFrames(): List<PcmFrame> {
+        val input: InputStream = socket?.inputStream ?: throw ProtocolException("not connected")
+        val chunk = ByteArray(8192)
+        return try {
+            val n = input.read(chunk)
+            if (n < 0) {
+                throw ProtocolException("EOF while reading frames")
+            }
+            if (n == 0) {
+                emptyList()
+            } else {
+                reader.feed(chunk.copyOf(n))
+            }
+        } catch (_: SocketTimeoutException) {
+            emptyList()
+        } catch (e: IOException) {
+            // LocalSocket may surface EAGAIN as "Try again" when peer is busy.
+            if (e.message?.contains("Try again", ignoreCase = true) == true) {
+                emptyList()
+            } else {
+                throw e
+            }
+        }
     }
 
     private fun writeFrame(type: Int, payload: ByteArray) {

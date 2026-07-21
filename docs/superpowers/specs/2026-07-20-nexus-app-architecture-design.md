@@ -1,7 +1,7 @@
 # Nexus 全新架构设计方案：Zygisk 旁路 + 纯 Android Native App 闭环
 
 **日期：** 2026-07-20  
-**修订：** 2026-07-21（按架构评审修订）  
+**修订：** 2026-07-21（§4.2.1：开启需确认默认电话；取消则回滚 OFF）  
 **状态：** Draft（产品项已拍板；实现计划见 `docs/superpowers/plans/2026-07-20-nexus-app-architecture.md`）  
 **特性分支：** `nexus-app-architecture`
 
@@ -183,6 +183,29 @@ offset 4: payload[length]
 **决策：** 成为默认电话应用，用 `InCallService` 正规接听/挂断；**先做最小通话 UI，后续再完善该模块视觉与交互。**  
 不采用「不占默认拨号 + 模拟按键/钩 Telephony」作为主路径。
 
+#### 4.2.1 Nexus 接管开关（系统电话 ↔ Nexus，可逆）
+
+真机（Lineage + AOSP Dialer）上，Telecom 可能长期绑定系统 `com.android.dialer` 的 `InCallService`（含 Emergency ICS），导致虽已授予 `ROLE_DIALER` 给 Nexus，来电仍只进系统电话、无法自动接听。
+
+**产品要求：** Settings 提供一键开关，在「Nexus 接管」与「系统电话」之间可逆切换；**关闭接管后不得影响日常接打电话**。
+
+| 状态 | 行为 |
+| :--- | :--- |
+| **接管 ON** | 用户确认 `ROLE_DIALER` 后：`telecom set-default-dialer` → Nexus；启用 Nexus InCall + `pm disable` 系统 Dialer `InCallServiceImpl`（防 ICS 抢占）；`InCallService` + `PHONE_STATE` 兜底自动接听按双卡策略生效 |
+| **接管 OFF** | **先** `pm enable` 系统 Dialer InCall，再 **`pm disable` Nexus InCall**（避免 Telecom 仍绑旧 Default-Dialer→Nexus）；默认电话交回 `com.android.dialer`；必要时 bounce `com.android.phone`；Nexus 侧忽略 RINGING；系统电话 UI 恢复 |
+
+**开启流程（必须可回滚）：**
+
+1. 点击「开启 Nexus 接管」→ **先** `pm enable` Nexus InCall（交回时会禁用它；不启用则系统认为无资格，ROLE 确认窗不弹出），再弹出「设为默认电话」确认（已是默认电话则跳过弹窗）。此时系统 Dialer InCall 仍保持启用。
+2. 用户**确认 Nexus** → 再执行 root 组件切换（禁用系统 Dialer InCall、写 `dialer_takeover=true`）。
+3. 用户**取消 / 未选 Nexus** → **回滚为接管 OFF**（恢复系统 Dialer InCall、禁用 Nexus InCall、交回默认电话、写 `dialer_takeover=false`），Toast 提示已恢复；**不得**留下「系统 InCall 已禁用但 Nexus 不是默认电话」的半残状态。
+4. 组件切换与角色确认**不要并行抢跑**：未确认前禁止 `pm disable` 系统 Dialer ICS。
+5. 切换过程**禁止** `am start` 拉起系统 Dialer 界面（会盖住 Settings 弹出拨号盘）；OFF 仅 enable 组件 + 交回角色；ON 成功后 `force-stop` 系统 Dialer 并回到 Settings。
+
+配置字段：`dialer_takeover`（JSON，缺省按 `true` 解析以兼容旧配置；运行时以开关与组件状态为准）。切换依赖 root（`su`）；失败时 Toast 明确提示。
+
+> 说明：disable 仅针对 **InCall 组件**，不是卸载系统电话 App；OFF 时必须把系统 Dialer ICS enable 回来，并禁用 Nexus ICS，否则「交回系统电话」仍可能不弹通话界面。
+
 #### MVP 通话 UI 范围（最小实现）
 
 | 界面 | MVP 必须 | 可后续完善 |
@@ -190,9 +213,9 @@ offset 4: payload[length]
 | 拨号页 | 处理 `DIAL`/`tel:`：号码框 + 呼叫（满足 `ROLE_DIALER`） | 通讯录、通话记录、智能拨号 |
 | 来电页 | 号码/卡槽、接听、拒接；策略 `ai` 时可自动 `answer()` | 精美全屏动效、头像/归属地 |
 | 通话中页 | 挂断、**AI / 人工**切换 | 免提/通讯录/会议/转接等 |
-| 设置 | 双卡 `human` / `ai` / `reject`；引导授予默认电话 | 向导抛光、多语言文案 |
+| 设置 | 双卡策略；**Nexus 接管开关**；默认电话角色引导 | 向导抛光、多语言文案 |
 
-用户拒绝授予默认电话时：**AI 自动接听不可用**，Settings 内明确提示并提供「去设置」入口（不做侧门接听兜底）。
+用户拒绝授予默认电话（接管 ON 时）：**AI 自动接听不可用**，Settings 内明确提示并提供「去设置」入口。接管 OFF 时不要求持有默认电话角色。
 
 AI 接通后：
 
@@ -268,8 +291,10 @@ ASR 文本 → LLM（DeepSeek，通话上下文）→ 回复文本
 
 仅当同时满足时清零：
 
-1. `g_ai_mute_mic == true`；
-2. 当前 `pcm*` 是已识别的 **通话上行 / 会进入对方耳麦的 mic 路径**（实现阶段结合现有 incall / voice 句柄跟踪；对无法识别的句柄默认不 mute，并打日志）。
+1. `g_ai_mute_mic == true`（`CTRL_MUTE`）→ 仅 `pcm_read` 门控（kona 真麦几乎不经此路径，**目前压不住环境音**）。
+2. **禁止：** `AudioManager.isMicrophoneMute`（会连带掐 Incall_Music TX）。
+3. **禁止（已踩坑）：** 把 `TX_AIF1_CAP Mixer DEC*` 置 0——会拆掉整条语音上行混音，AI TTS 也没了。
+4. **TODO 静麦保 TX：** 需标定「只降麦增益、不动共享 UL 总线」的 mixer/codec 控件；未完成前接受 AI 模式仍有环境音。
 
 伪代码：
 

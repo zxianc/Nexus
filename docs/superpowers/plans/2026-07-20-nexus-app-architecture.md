@@ -60,7 +60,8 @@
 | `nexus_app/.../config/NexusConfig.kt` | DataStore/JSON 配置真源 |
 | `nexus_app/.../archive/CallArchive.kt` | 一通一目录文字存档 |
 | `nexus_app/.../notify/*` | 企微 Webhook、短信 Observer |
-| `nexus_app/.../ui/settings/*` | 策略/API/模型/默认电话引导 |
+| `nexus_app/.../ui/settings/*` | 策略/API/模型/默认电话引导；**Nexus 接管开关** |
+| `nexus_app/.../telecom/DialerTakeover.kt` | 系统电话 ↔ Nexus 可逆切换（root：enable/disable 系统 Dialer ICS） |
 | `doc/00_framework_overview.md` | G4 后更新架构说明（勿在 M0 改） |
 
 ---
@@ -742,6 +743,12 @@ override fun onCallAdded(call: Call) {
 * InCall：Hangup + Toggle AI/Human（切换时发 MUTE/FLUSH）
 
 - [ ] **Step 4: 真机** — 授予默认电话 → 来电自动/手动接听 → 挂断。Expected：无系统电话 UI 抢主界面（或可接受共存，但接听由本 App 完成）。
+- [ ] **Step 4b: Nexus 接管开关（见 spec §4.2.1）**
+  - Settings：`开启 Nexus 接管` / `关闭 → 交回系统电话`（开启时一并弹出默认电话确认，无单独按钮）
+  - ON：用户确认 `ROLE_DIALER` **之后**再切组件：启用 Nexus ICS + `pm disable` 系统 Dialer ICS + 默认电话=Nexus
+  - 取消确认 / 未选 Nexus：**回滚 OFF**（不得半残）
+  - OFF：`pm enable` 系统 Dialer ICS + `pm disable` Nexus ICS + 交回 `com.android.dialer` + cleanup/bounce phone；**禁止** `am start` 系统拨号盘；日常接听正常
+  - 配置：`dialer_takeover`；`AiAnswerReceiver` / `NexusInCallService` 在 OFF 时 no-op
 
 - [ ] **Step 5: Commit**
 
@@ -840,10 +847,22 @@ git commit -m "feat(app): minimal dialer and InCallService"
 - `notify_queue/` 投放待推送任务；成功删除
 - SMS：`READ_SMS` + Inbox Observer + 水位 SharedPreferences
 
-- [ ] **Step 1: 存档单测 round-trip meta+transcript**  
-- [ ] **Step 2: 挂断路径调用 writer + WeCom（config.enabled）**  
-- [ ] **Step 3: 短信转发冒烟**  
-- [ ] **Step 4: Commit** `feat(app): call archive, WeCom notify, SMS watcher`
+- [x] **Step 1: 存档单测 round-trip meta+transcript**  
+- [x] **Step 2: 挂断路径调用 writer + WeCom（config.enabled）**  
+- [x] **Step 3: 短信转发冒烟**（ContentObserver + 水位；需 READ_SMS + notify 配置）  
+- [x] **Step 4: Commit**（与接管开关 / ASR-LLM-TTS / 回声门控一并提交）
+
+---
+
+### Deferred TODO：AI 接听静麦保 TX（kona 真机未解）
+
+**状态：** 暂缓；G3 项「环境音被软静音」当前**不作为阻塞**（对方仍可能听到环境音）。
+
+**已踩坑（勿再试）：**
+- `AudioManager.isMicrophoneMute` → 环境音没了，Incall_Music TTS 也没了
+- `TX_AIF1_CAP Mixer DEC*` 置 0 → 拆掉共享语音上行，AI/环境音皆无
+
+**待标定：** 只降手麦/DEC 增益、不动共享 UL 总线与 `Incall_Music Audio Mixer MultiMedia9` 的 mixer/codec 控件（见 spec §5）。
 
 ---
 
@@ -857,7 +876,8 @@ git commit -m "feat(app): minimal dialer and InCallService"
 | # | 项 | 结果 |
 |---|----|------|
 | 1 | 默认电话授予后 AI 卡自动接听 | |
-| 2 | 对方听到 TTS，环境音被软静音 | |
+| 1b | 关闭 Nexus 接管后系统电话可正常接听；再开启后 AI 卡可再自动接 | |
+| 2 | 对方听到 TTS；环境音软静音（**Deferred TODO**，暂不阻塞） | |
 | 3 | 切人工后对方听到 mic | |
 | 4 | 挂断后存档目录有 transcript | |
 | 5 | 企微收到通话摘要（若启用） | |

@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.nexus.assistant.notify.SmsWatcher
 import com.nexus.assistant.telecom.DialerActivity
 import com.nexus.assistant.ui.SmokeActivity
 import com.nexus.assistant.ui.settings.SettingsActivity
@@ -13,6 +14,7 @@ import com.nexus.assistant.ui.settings.SettingsActivity
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SmsWatcher.ensureRegistered(this)
         val root =
             LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL

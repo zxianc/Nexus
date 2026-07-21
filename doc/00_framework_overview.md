@@ -123,4 +123,6 @@ config.json
 
 设计稿：WebUI / 双卡策略 / 企微通知见 `docs/superpowers/specs/2026-07-19-*.md`。
 
-**仍 TODO：** AI 接听静麦保 TX；通话语音 mix 存档。
+**仍 TODO：**
+- **AI 接听静麦保 TX**（kona：勿用系统静音 / 勿清 `TX_AIF1_CAP Mixer DEC*`；需另标定麦增益；详见 architecture plan Deferred TODO）
+- 通话语音 mix 存档

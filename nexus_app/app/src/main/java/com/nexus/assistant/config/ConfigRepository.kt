@@ -4,7 +4,8 @@ import android.content.Context
 import java.io.File
 
 class ConfigRepository(context: Context) {
-    private val file = File(context.filesDir, "config.json")
+    private val appContext = context.applicationContext
+    private val file = File(appContext.filesDir, "config.json")
     private val lock = Any()
 
     fun load(): NexusConfig =
@@ -26,4 +27,12 @@ class ConfigRepository(context: Context) {
             file.writeText(cfg.toJson())
         }
     }
+
+    /** Refresh carrier/number from device; keep existing policies. */
+    fun refreshSimMetadata(): NexusConfig =
+        synchronized(lock) {
+            val merged = SimCatalog.merge(load(), SimInfoReader(appContext).read())
+            save(merged)
+            merged
+        }
 }

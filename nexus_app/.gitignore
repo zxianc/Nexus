@@ -7,3 +7,6 @@ local.properties
 .DS_Store
 .cxx/
 captures/
+# Large native AAR (~48MB); restore via scripts/fetch_sherpa_aar.ps1
+app/libs/*.aar
+_sherpa_aar/

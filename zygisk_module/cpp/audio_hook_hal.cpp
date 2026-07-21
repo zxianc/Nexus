@@ -86,6 +86,7 @@ using mixer_open_fn_t = void *(*)(unsigned int card);
 using mixer_close_fn_t = void (*)(void *mixer);
 using mixer_get_ctl_fn_t = void *(*)(void *mixer, const char *name);
 using mixer_ctl_set_fn_t = int (*)(void *ctl, unsigned int id, int value);
+using mixer_ctl_get_fn_t = int (*)(void *ctl, unsigned int id);
 
 static void *resolve_sym(const char *lib, const char *sym) {
     void *h = dlopen(lib, RTLD_NOW | RTLD_NOLOAD);
@@ -134,6 +135,8 @@ static std::atomic<int> g_pcm_w{0}, g_pcm_r{0};
 static std::atomic<bool> g_ai_mute_mic{false};
 static std::atomic<void *> g_dl_rec_pcm{nullptr};
 static std::atomic<void *> g_voice_ul_pcm{nullptr};
+// Last non-DL capture open (may happen before voice_start_usecase).
+static std::atomic<void *> g_last_capture_pcm{nullptr};
 // UDS client fd (declared early — frame parser / accept paths use it).
 static std::atomic<int> g_uds_client{-1};
 static std::atomic<bool> g_uds_hdr_sent{false};
@@ -144,13 +147,22 @@ static bool is_voice_ul_mic(void *pcm) {
     }
     void *dl = g_dl_rec_pcm.load();
     if (dl != nullptr && pcm == dl) {
-        return false;
+        return false; // never mute Round-7 DL dump
     }
     void *ul = g_voice_ul_pcm.load();
     if (ul != nullptr) {
         return pcm == ul;
     }
-    // Unknown handle: do not mute (avoid breaking non-call capture).
+    // UL never tracked (common if mic opens before g_in_voice): during an active
+    // voice call, treat any non-DL pcm_read as uplink candidate so CTRL_MUTE works.
+    if (g_in_voice.load()) {
+        static std::atomic<int> fb{0};
+        int n = fb.fetch_add(1, std::memory_order_relaxed);
+        if (n < 8 || (n % 500) == 0) {
+            LOGI("soft-mute fallback pcm=%p (UL untracked, in_voice=1)", pcm);
+        }
+        return true;
+    }
     return false;
 }
 
@@ -198,6 +210,32 @@ static int set_mixer_int(void *mixer, mixer_get_ctl_fn_t get_ctl, mixer_ctl_set_
     int rc = set_val(ctl, 0, value);
     LOGI("mixer set '%s'=%d rc=%d", name, value, rc);
     return rc;
+}
+
+// NOTE: Do NOT zero TX_AIF1_CAP Mixer DEC* — on kona that tears down the whole
+// voice UL mix and kills Incall_Music TX as well (CTRL_MUTE then → silence).
+// True "mute mic, keep TTS" still needs a calibrated codec gain that is not on
+// the shared UL mix bus; tracked as TODO (静麦保 TX).
+static void apply_mixer_mic_mute(bool mute) {
+    (void)mute;
+}
+
+/** Undo a previous bad mute that left TX_AIF1_CAP Mixer DEC1=0 (no UL / no TTS). */
+static void repair_voice_ul_mixers() {
+    auto mixer_open = (mixer_open_fn_t)resolve_sym("libtinyalsa.so", "mixer_open");
+    auto mixer_close = (mixer_close_fn_t)resolve_sym("libtinyalsa.so", "mixer_close");
+    auto get_ctl = (mixer_get_ctl_fn_t)resolve_sym("libtinyalsa.so", "mixer_get_ctl_by_name");
+    auto set_val = (mixer_ctl_set_fn_t)resolve_sym("libtinyalsa.so", "mixer_ctl_set_value");
+    if (!mixer_open || !mixer_close || !get_ctl || !set_val) {
+        return;
+    }
+    void *mixer = mixer_open(0);
+    if (!mixer) {
+        return;
+    }
+    // Handset path on this device had DEC1 enabled during AI call before bad mute.
+    set_mixer_int(mixer, get_ctl, set_val, "TX_AIF1_CAP Mixer DEC1", 1);
+    mixer_close(mixer);
 }
 
 static bool load_capture_config(struct pcm_config *out) {
@@ -381,6 +419,7 @@ static void uds_drop_client(int fd, TxInjectQ *inj) {
         g_uds_hdr_sent.store(false);
     }
     g_ai_mute_mic.store(false);
+    apply_mixer_mic_mute(false);
     if (inj) {
         pthread_mutex_lock(&inj->mu);
         txq_clear_locked(inj);
@@ -393,10 +432,13 @@ static void uds_dispatch_frame(uint8_t type, const uint8_t *payload, size_t len,
     case kTypePcmUl:
         txq_append(inj, payload, len);
         break;
-    case kTypeCtrlMute:
-        g_ai_mute_mic.store(len > 0 && payload[0] != 0);
-        LOGI("CTRL_MUTE %d", (int)g_ai_mute_mic.load());
+    case kTypeCtrlMute: {
+        bool on = len > 0 && payload[0] != 0;
+        g_ai_mute_mic.store(on);
+        // pcm_read gate only — mixer DEC mute removed (broke Incall_Music TX).
+        LOGI("CTRL_MUTE %d", (int)on);
         break;
+    }
     case kTypeCtrlFlushUl:
         pthread_mutex_lock(&inj->mu);
         txq_clear_locked(inj);
@@ -406,6 +448,7 @@ static void uds_dispatch_frame(uint8_t type, const uint8_t *payload, size_t len,
     case kTypeCtrlSession:
         if (len > 0 && payload[0] == 0) {
             g_ai_mute_mic.store(false);
+            apply_mixer_mic_mute(false);
             pthread_mutex_lock(&inj->mu);
             txq_clear_locked(inj);
             pthread_mutex_unlock(&inj->mu);
@@ -578,6 +621,7 @@ static void uds_on_accept(int cfd) {
     int old = g_uds_client.exchange(cfd);
     g_uds_hdr_sent.store(false);
     g_ai_mute_mic.store(false);
+    apply_mixer_mic_mute(false);
     if (old >= 0) {
         close(old);
     }
@@ -975,6 +1019,7 @@ static void *tx_incall_music_thread(void *) {
     LOGI("1.E TX DONE hits=%d written=%zu audible_periods=%zu", hits, total, audible);
     uds_parser_reset(&parser);
     g_ai_mute_mic.store(false);
+    apply_mixer_mic_mute(false);
     txq_destroy(&inj);
     free(buf);
     pcm_close(pcm);
@@ -1035,6 +1080,18 @@ static int fake_voice_start_usecase(void *adev, int usecase) {
     LOGI("voice_start_usecase adev=%p usecase=%d", adev, usecase);
     int rc = orig_voice_start_uc(adev, usecase);
     g_in_voice.store(true);
+    repair_voice_ul_mixers();
+    // Mic capture often opens before voice_start; promote last PCM_IN as UL.
+    if (g_voice_ul_pcm.load() == nullptr) {
+        void *cand = g_last_capture_pcm.load();
+        void *dl = g_dl_rec_pcm.load();
+        if (cand != nullptr && cand != dl) {
+            void *expected = nullptr;
+            if (g_voice_ul_pcm.compare_exchange_strong(expected, cand)) {
+                LOGI("promote pre-voice capture as UL mic pcm=%p", cand);
+            }
+        }
+    }
     start_round7();
     start_tx_incall_music();
     return rc;
@@ -1056,11 +1113,18 @@ static pcm_open_fn_t orig_pcm_open = nullptr;
 static void *fake_pcm_open(unsigned int card, unsigned int device, unsigned int flags,
                            const struct pcm_config *config) {
     void *pcm = orig_pcm_open(card, device, flags, config);
-    if (pcm && g_in_voice.load() && (flags & PCM_IN) && device != 23) {
-        // Heuristic: first non-DL (d23) capture during a call is treated as UL mic.
-        void *expected = nullptr;
-        if (g_voice_ul_pcm.compare_exchange_strong(expected, pcm)) {
-            LOGI("track voice UL mic pcm=%p card=%u dev=%u", pcm, card, device);
+    if (pcm && (flags & PCM_IN)) {
+        LOGI("pcm_open IN pcm=%p card=%u dev=%u flags=0x%x in_voice=%d", pcm, card, device, flags,
+             (int)g_in_voice.load());
+        if (device != 23) {
+            g_last_capture_pcm.store(pcm);
+            if (g_in_voice.load()) {
+                // Heuristic: first non-DL (d23) capture during a call is UL mic.
+                void *expected = nullptr;
+                if (g_voice_ul_pcm.compare_exchange_strong(expected, pcm)) {
+                    LOGI("track voice UL mic pcm=%p card=%u dev=%u", pcm, card, device);
+                }
+            }
         }
     }
     return pcm;
@@ -1070,6 +1134,8 @@ static pcm_close_fn_t orig_pcm_close = nullptr;
 static int fake_pcm_close(void *pcm) {
     void *ul = pcm;
     g_voice_ul_pcm.compare_exchange_strong(ul, nullptr);
+    void *last = pcm;
+    g_last_capture_pcm.compare_exchange_strong(last, nullptr);
     return orig_pcm_close(pcm);
 }
 

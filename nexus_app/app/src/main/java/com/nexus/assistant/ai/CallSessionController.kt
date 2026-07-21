@@ -1,0 +1,59 @@
+package com.nexus.assistant.ai
+
+import android.util.Log
+import com.nexus.assistant.config.LlmConfig
+
+/**
+ * Phone-call LLM state machine: user utterance → DeepSeek stream → sentence callbacks.
+ */
+class CallSessionController(
+    private val llm: LlmConfig,
+    private val client: DeepSeekClient?,
+    private val onAssistantSentence: (String) -> Unit,
+) {
+    private val session = CallSession(llm.maxMsgs)
+
+    fun reset() {
+        session.reset()
+    }
+
+    fun ready(): Boolean = client != null && llm.enabled && llm.apiKey.isNotBlank()
+
+    fun transcriptLines(): List<String> = session.transcriptLines()
+
+    /**
+     * @return full assistant text, or empty on failure / not ready
+     */
+    fun onUserUtterance(text: String): String {
+        val user = text.trim()
+        if (user.isEmpty()) return ""
+        val c = client
+        if (c == null || !llm.enabled) {
+            Log.w(TAG, "LLM not ready, skip")
+            return ""
+        }
+        val gen = session.generation
+        if (!session.appendUserGen(gen, user)) return ""
+        return try {
+            val msgs = session.messages(llm.systemPrompt)
+            val full =
+                c.chatStream(msgs) { sentence ->
+                    if (session.generation == gen) {
+                        onAssistantSentence(sentence)
+                    }
+                }
+            if (full.isNotBlank()) {
+                session.appendAssistantGen(gen, full)
+            }
+            Log.i(TAG, "LLM reply chars=${full.length}")
+            full
+        } catch (e: Exception) {
+            Log.e(TAG, "LLM failed", e)
+            ""
+        }
+    }
+
+    companion object {
+        private const val TAG = "CallSession"
+    }
+}
