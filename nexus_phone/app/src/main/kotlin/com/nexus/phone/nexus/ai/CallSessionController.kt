@@ -50,7 +50,7 @@ class CallSessionController(
             Log.i(TAG, "LLM reply chars=${full.length}")
             full
         } catch (e: Exception) {
-            Log.e(TAG, "LLM failed", e)
+            Log.e(TAG, "LLM failed: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString()}")
             ""
         }
     }

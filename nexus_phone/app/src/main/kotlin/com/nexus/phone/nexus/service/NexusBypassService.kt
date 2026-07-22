@@ -13,6 +13,8 @@ import android.util.Log
 import com.nexus.phone.nexus.ai.CallSessionController
 import com.nexus.phone.nexus.ai.DeepSeekClient
 import com.nexus.phone.nexus.ai.ModelPaths
+import com.nexus.phone.nexus.ai.NetworkBinder
+import com.nexus.phone.nexus.ai.SentenceBuf
 import com.nexus.phone.nexus.ai.SherpaAsr
 import com.nexus.phone.nexus.ai.SherpaTts
 import com.nexus.phone.nexus.archive.CallFinalizer
@@ -114,6 +116,7 @@ class NexusBypassService : Service() {
     override fun onDestroy() {
         sessionWanted = false
         releaseAi()
+        NetworkBinder.clear(this)
         aiExecutor.shutdownNow()
         super.onDestroy()
     }
@@ -233,6 +236,7 @@ class NexusBypassService : Service() {
     }
 
     private fun ensureAiLoaded() {
+        NetworkBinder.bindBestInternet(this)
         val layout = ModelPaths.resolve(this)
         Log.i(
             TAG,
@@ -302,14 +306,19 @@ class NexusBypassService : Service() {
         aiExecutor.execute {
             try {
                 if (isListenSuppressed() || !sessionWanted) return@execute
-                val text = asr?.transcribe(u.pcm16k).orEmpty()
+                val text = asr?.transcribe(u.pcm16k).orEmpty().trim()
                 Log.i(TAG, "ASR text='$text'")
-                if (text.isBlank() || !sessionWanted || isListenSuppressed()) return@execute
+                if (!SentenceBuf.hasSpeechRune(text) || !sessionWanted || isListenSuppressed()) {
+                    if (text.isNotEmpty()) Log.i(TAG, "drop non-speech ASR")
+                    return@execute
+                }
+                // Re-bind in case call setup changed default route mid-session.
+                NetworkBinder.bindBestInternet(this@NexusBypassService)
                 val llm = callLlm
                 if (llm != null && llm.ready()) {
                     val full = llm.onUserUtterance(text)
                     if (full.isBlank()) {
-                        Log.w(TAG, "LLM empty reply (not echoing user); ASR='$text'")
+                        Log.w(TAG, "LLM empty reply; ASR='$text'")
                         fallbackListenRetry()
                     }
                 } else {

@@ -29,7 +29,8 @@ class SentenceBuf(
     companion object {
         fun isSentenceEnd(ch: Char): Boolean =
             when (ch) {
-                '。', '！', '？', '；', '.', '!', '?', ';', '\n' -> true
+                // Include comma so TTS can start before a full 。 arrives (lower latency).
+                '。', '！', '？', '；', '，', ',', '.', '!', '?', ';', '\n' -> true
                 else -> false
             }
 
