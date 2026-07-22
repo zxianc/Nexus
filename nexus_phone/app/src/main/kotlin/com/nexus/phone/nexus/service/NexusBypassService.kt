@@ -309,23 +309,27 @@ class NexusBypassService : Service() {
                 if (llm != null && llm.ready()) {
                     val full = llm.onUserUtterance(text)
                     if (full.isBlank()) {
-                        Log.w(TAG, "LLM empty reply, fallback echo")
-                        fallbackEcho(text)
+                        Log.w(TAG, "LLM empty reply (not echoing user); ASR='$text'")
+                        fallbackListenRetry()
                     }
                 } else {
-                    fallbackEcho(text)
+                    Log.w(TAG, "LLM not ready; ASR='$text'")
+                    fallbackListenRetry()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "utterance AI", e)
+                fallbackListenRetry()
             } finally {
                 aiBusy.set(false)
             }
         }
     }
 
-    private fun fallbackEcho(text: String) {
+    /** Do not parrot the caller — that sounded like a broken echo. */
+    private fun fallbackListenRetry() {
         val c = client ?: return
-        val audio = tts?.synthesize("收到，$text", sid = currentTtsSpeakerId()) ?: return
+        val audio =
+            tts?.synthesize("信号不太好，请再说一遍。", sid = currentTtsSpeakerId()) ?: return
         injectTts(c, audio.samples, audio.sampleRate)
     }
 

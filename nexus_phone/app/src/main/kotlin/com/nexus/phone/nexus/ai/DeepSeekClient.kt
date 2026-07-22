@@ -13,6 +13,9 @@ import java.nio.charset.StandardCharsets
 
 /**
  * DeepSeek OpenAI-compatible chat completions (SSE stream).
+ *
+ * Always sends thinking=disabled so assistant text lands in `content`
+ * (deepseek-v4 otherwise streams into `reasoning_content`, which we do not speak).
  */
 class DeepSeekClient(
     private val apiKey: String,
@@ -31,36 +34,28 @@ class DeepSeekClient(
         if (key.isEmpty()) {
             throw IllegalStateException("deepseek: empty API key")
         }
-        val url = URL(baseUrl.trimEnd('/') + "/chat/completions")
-        val req =
-            JsonObject().apply {
-                addProperty("model", model.ifBlank { "deepseek-v4-flash" })
-                addProperty("stream", true)
-                add(
-                    "thinking",
-                    JsonObject().apply { addProperty("type", "disabled") },
-                )
-                add(
-                    "messages",
-                    gson.toJsonTree(messages.map { mapOf("role" to it.role, "content" to it.content) }),
-                )
-            }
+        val streamed = streamOnce(messages, onSentence)
+        if (streamed.isNotBlank()) return streamed
 
-        val conn =
-            (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = connectTimeoutMs
-                readTimeout = readTimeoutMs
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("Authorization", "Bearer $key")
-                setRequestProperty("Accept", "text/event-stream")
+        // Stream can yield empty when the model only emits reasoning_content.
+        // Fall back to a non-stream call with thinking disabled.
+        Log.w(TAG, "stream empty; retry non-stream with thinking disabled")
+        val once = completeOnce(messages)
+        if (once.isNotBlank()) {
+            SentenceBuf(onSentence).apply {
+                push(once)
+                flush()
             }
+        }
+        return once
+    }
 
+    private fun streamOnce(
+        messages: List<ChatMessage>,
+        onSentence: (String) -> Unit,
+    ): String {
+        val conn = openChat(messages, stream = true)
         try {
-            OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use {
-                it.write(gson.toJson(req))
-            }
             val code = conn.responseCode
             val stream =
                 if (code in 200..299) {
@@ -92,6 +87,77 @@ class DeepSeekClient(
             return full.toString().trim()
         } finally {
             conn.disconnect()
+        }
+    }
+
+    private fun completeOnce(messages: List<ChatMessage>): String {
+        val conn = openChat(messages, stream = false)
+        try {
+            val code = conn.responseCode
+            val stream =
+                if (code in 200..299) {
+                    conn.inputStream
+                } else {
+                    conn.errorStream ?: conn.inputStream
+                }
+            val body =
+                BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8)).use {
+                    it.readText()
+                }
+            if (code !in 200..299) {
+                throw IllegalStateException("deepseek: HTTP $code: ${body.trim().take(2048)}")
+            }
+            return extractMessageContent(body).trim()
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun openChat(messages: List<ChatMessage>, stream: Boolean): HttpURLConnection {
+        val url = URL(baseUrl.trimEnd('/') + "/chat/completions")
+        val req =
+            JsonObject().apply {
+                addProperty("model", model.ifBlank { "deepseek-v4-flash" })
+                addProperty("stream", stream)
+                add(
+                    "thinking",
+                    JsonObject().apply { addProperty("type", "disabled") },
+                )
+                add(
+                    "messages",
+                    gson.toJsonTree(messages.map { mapOf("role" to it.role, "content" to it.content) }),
+                )
+            }
+        val conn =
+            (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = connectTimeoutMs
+                readTimeout = readTimeoutMs
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+                if (stream) {
+                    setRequestProperty("Accept", "text/event-stream")
+                }
+            }
+        OutputStreamWriter(conn.outputStream, StandardCharsets.UTF_8).use {
+            it.write(gson.toJson(req))
+        }
+        return conn
+    }
+
+    private fun extractMessageContent(body: String): String {
+        return try {
+            val root = com.google.gson.JsonParser.parseString(body).asJsonObject
+            val choices = root.getAsJsonArray("choices") ?: return ""
+            if (choices.size() == 0) return ""
+            val message = choices[0].asJsonObject.getAsJsonObject("message") ?: return ""
+            val content = message.get("content")
+            if (content == null || content.isJsonNull) return ""
+            content.asString.orEmpty()
+        } catch (e: Exception) {
+            Log.e(TAG, "parse completion", e)
+            ""
         }
     }
 
