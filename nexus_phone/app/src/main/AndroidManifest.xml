@@ -113,6 +113,12 @@
         </activity>
 
         <activity
+            android:name=".nexus.ui.NexusSettingsActivity"
+            android:exported="false"
+            android:label="Nexus AI"
+            android:parentActivityName=".activities.SettingsActivity" />
+
+        <activity
             android:name="com.nexus.phone.activities.CallActivity"
             android:excludeFromRecents="true"
             android:exported="false"

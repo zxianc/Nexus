@@ -45,6 +45,7 @@ import com.nexus.phone.extensions.config
 import com.nexus.phone.extensions.launchAccountsConfiguration
 import com.nexus.phone.helpers.RecentsHelper
 import com.nexus.phone.models.RecentCall
+import com.nexus.phone.nexus.ui.NexusSettingsActivity
 import java.util.Locale
 import kotlin.system.exitProcess
 
@@ -61,6 +62,7 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private val binding by viewBinding(ActivitySettingsBinding::inflate)
+    private var nexusAiEntryAdded = false
     private val getContent =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
@@ -119,6 +121,8 @@ class SettingsActivity : SimpleActivity() {
         setupCallsImport()
         updateTextColors(binding.settingsHolder)
 
+        setupNexusAiEntry()
+
         binding.apply {
             arrayOf(
                 settingsColorCustomizationSectionLabel,
@@ -152,6 +156,23 @@ class SettingsActivity : SimpleActivity() {
         binding.settingsToolbar.menu.apply {
             findItem(R.id.calling_accounts).isVisible = canLaunchAccountsConfiguration()
         }
+    }
+
+    private fun setupNexusAiEntry() {
+        if (nexusAiEntryAdded) return
+        nexusAiEntryAdded = true
+        val row =
+            android.widget.TextView(this).apply {
+                text = "Nexus / AI"
+                textSize = 16f
+                setPadding(48, 36, 48, 36)
+                setOnClickListener {
+                    startActivity(Intent(this@SettingsActivity, NexusSettingsActivity::class.java))
+                }
+            }
+        val insertAt =
+            binding.settingsHolder.indexOfChild(binding.settingsGeneralSettingsLabel).coerceAtLeast(0)
+        binding.settingsHolder.addView(row, insertAt)
     }
 
     private fun setupCustomizeColors() {
