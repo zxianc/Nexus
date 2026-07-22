@@ -147,5 +147,7 @@ dependencies {
     implementation(libs.eventbus)
     implementation(libs.libphonenumber)
     implementation(libs.geocoder)
+    implementation("com.google.code.gson:gson:2.11.0")
+    testImplementation("junit:junit:4.13.2")
     detektPlugins(libs.compose.detekt)
 }
