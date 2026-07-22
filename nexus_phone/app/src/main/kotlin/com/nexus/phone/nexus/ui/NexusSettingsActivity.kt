@@ -113,16 +113,6 @@ class NexusSettingsActivity : SimpleActivity() {
         }
         binding.nexusPickSttHolder.setOnClickListener { launchPick(PickTarget.STT) }
         binding.nexusPickTtsHolder.setOnClickListener { launchPick(PickTarget.TTS) }
-        binding.nexusResetSttHolder.setOnClickListener {
-            repo.save(repo.load().copy(sttModelPath = null))
-            refreshModelStatus()
-            toast(R.string.nexus_stt_reset)
-        }
-        binding.nexusResetTtsHolder.setOnClickListener {
-            repo.save(repo.load().copy(ttsModelPath = null))
-            refreshModelStatus()
-            toast(R.string.nexus_tts_reset)
-        }
     }
 
     private fun launchPick(target: PickTarget) {
