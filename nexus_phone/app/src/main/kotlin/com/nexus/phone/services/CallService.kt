@@ -1,7 +1,5 @@
 package com.nexus.phone.services
 
-import android.os.Handler
-import android.os.Looper
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.InCallService
@@ -20,6 +18,7 @@ import com.nexus.phone.helpers.NoCall
 import com.nexus.phone.models.Events
 import com.nexus.phone.nexus.policy.CallPolicyBindings
 import com.nexus.phone.nexus.policy.PolicyAction
+import com.nexus.phone.nexus.service.BypassCommands
 import org.greenrobot.eventbus.EventBus
 
 class CallService : InCallService() {
@@ -33,7 +32,7 @@ class CallService : InCallService() {
                     Call.STATE_ACTIVE -> {
                         val decision = CallPolicyBindings.controller(this@CallService).onActive()
                         if (decision.actions.contains(PolicyAction.StartBypass)) {
-                            Log.i(TAG, "StartBypass (PCM wiring in Task 7)")
+                            BypassCommands.startSession(this@CallService)
                             try {
                                 startActivity(CallActivity.getStartIntent(this@CallService))
                             } catch (e: Exception) {
@@ -44,7 +43,7 @@ class CallService : InCallService() {
                     }
                     Call.STATE_DISCONNECTED, Call.STATE_DISCONNECTING -> {
                         CallPolicyBindings.controller(this@CallService).onDisconnected()
-                        Log.i(TAG, "EndBypass (PCM wiring in Task 7)")
+                        BypassCommands.endSession(this@CallService)
                         callNotificationManager.cancelNotification()
                     }
                     else -> callNotificationManager.setupNotification()
@@ -65,6 +64,11 @@ class CallService : InCallService() {
             val peer = CallPolicyBindings.peerNumber(call)
             val decision =
                 CallPolicyBindings.controller(this).onRinging(accountId, sortOrder, peer)
+            com.nexus.phone.nexus.telecom.CallStore.noteRinging(
+                com.nexus.phone.nexus.policy.CallSessionState.slot,
+                com.nexus.phone.nexus.policy.CallSessionState.peerNumber,
+                com.nexus.phone.nexus.policy.CallSessionState.policyWire,
+            )
 
             when {
                 decision.actions.contains(PolicyAction.Reject) -> {
@@ -74,7 +78,6 @@ class CallService : InCallService() {
                 }
                 decision.actions.contains(PolicyAction.AnswerAi) -> {
                     Log.i(TAG, "policy AI — skip ringing UI, answer")
-                    // Low-priority / quiet notification; do not start CallActivity while RINGING.
                     callNotificationManager.setupNotification(true)
                     CallPolicyBindings.answerWithRetry(call)
                     return

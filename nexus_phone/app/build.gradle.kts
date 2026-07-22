@@ -36,6 +36,9 @@ android {
         targetSdk = project.libs.versions.app.build.targetSDK.get().toInt()
         versionName = project.property("VERSION_NAME").toString()
         versionCode = project.property("VERSION_CODE").toString().toInt()
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
     }
 
     // Keep R/manifest relative names under com.nexus.phone while APP_ID satisfies Commons.
@@ -148,6 +151,7 @@ dependencies {
     implementation(libs.libphonenumber)
     implementation(libs.geocoder)
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation(files("libs/sherpa-onnx-1.13.4.aar"))
     testImplementation("junit:junit:4.13.2")
     detektPlugins(libs.compose.detekt)
 }
