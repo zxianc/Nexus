@@ -30,6 +30,14 @@ Thumbs.db
 deepseek.key
 *.jks
 nexus_app/local.properties
+nexus_phone/local.properties
+nexus_phone/keystore.properties
+
+# Large offline models (download separately; see doc/01_replace_models.md)
+models/
+*.onnx
+*.tar.bz2
+*.tar.gz
 
 # Agent scratch (SDD ledgers / briefs)
 .superpowers/

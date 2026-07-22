@@ -248,8 +248,15 @@ class NexusBypassService : Service() {
         }
         val cfg = ConfigRepository(this).load()
         val sid = cfg.ttsSpeakerId.coerceAtLeast(0)
-        if (tts == null) {
-            tts = SherpaTts(layout, speakerId = sid)
+        val speed =
+            cfg.ttsSpeed.coerceIn(ConfigRepository.TTS_SPEED_MIN, ConfigRepository.TTS_SPEED_MAX)
+        val existing = tts
+        if (existing == null || existing.speed != speed) {
+            try {
+                existing?.close()
+            } catch (_: Exception) {
+            }
+            tts = SherpaTts(layout, speakerId = sid, speed = speed)
         }
         if (callLlm == null) {
             val llmCfg = cfg.llm

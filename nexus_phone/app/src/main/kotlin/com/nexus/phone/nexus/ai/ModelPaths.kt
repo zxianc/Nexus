@@ -37,7 +37,10 @@ object ModelPaths {
 
     fun defaultSttDir(context: Context): File = File(appModelsRoot(context), "sense-voice")
 
-    fun defaultTtsDir(context: Context): File = File(appModelsRoot(context), "vits-zh-ll")
+    fun defaultTtsDir(context: Context): File = File(appModelsRoot(context), "vits-zh-hf-fanchen-C")
+
+    /** Legacy default from early Nexus builds. */
+    fun legacyTtsDir(context: Context): File = File(appModelsRoot(context), "vits-zh-ll")
 
     fun importedSttDir(context: Context): File = File(context.filesDir, "imported/stt")
 
@@ -83,14 +86,18 @@ object ModelPaths {
     private fun pickDefaultTtsModel(context: Context, legacyRoot: File?): File {
         val dirs =
             buildList {
-                if (legacyRoot != null) add(File(legacyRoot, "vits-zh-ll"))
-                if (legacyRoot != null) add(legacyRoot)
+                if (legacyRoot != null) {
+                    add(File(legacyRoot, "vits-zh-hf-fanchen-C"))
+                    add(File(legacyRoot, "vits-zh-ll"))
+                    add(legacyRoot)
+                }
                 add(defaultTtsDir(context))
+                add(legacyTtsDir(context))
             }
         for (dir in dirs) {
             findOnnx(dir, preferInt8 = false)?.let { return it }
         }
-        return File(defaultTtsDir(context), "model.onnx")
+        return File(defaultTtsDir(context), "vits-zh-hf-fanchen-C.onnx")
     }
 
     /** Prefer model.int8.onnx / model.onnx, else first *.onnx in dir. */

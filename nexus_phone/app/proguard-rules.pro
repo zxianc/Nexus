@@ -21,3 +21,9 @@
     public static <1> INSTANCE;
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# sherpa-onnx JNI reads Kotlin config fields by name (GetObjectField).
+# Without this, release minify aborts: "JNI DETECTED ERROR: fid == null" in OfflineTts.newFromFile.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keepclassmembers class com.k2fsa.sherpa.onnx.** { *; }
+-dontwarn com.k2fsa.sherpa.onnx.**

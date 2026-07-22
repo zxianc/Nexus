@@ -70,7 +70,7 @@ Fossify 魔改设计：[`docs/superpowers/specs/2026-07-22-nexus-phone-fossify-m
 
 配置真源：App SharedPreferences `nexus_config`（**Settings → Nexus / AI**）。  
 
-STT/TTS 默认 `files/models/sense-voice` 与 `vits-zh-ll`。
+STT/TTS 默认 `files/models/sense-voice` 与 `vits-zh-hf-fanchen-C`（旧包 `vits-zh-ll` 仍可作回退）。替换模型（下载 / 安装）见 [`01_replace_models.md`](01_replace_models.md)。
 
 
 

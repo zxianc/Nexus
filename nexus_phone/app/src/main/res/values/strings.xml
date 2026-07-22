@@ -36,8 +36,17 @@
     <string name="nexus_llm_max_msgs">max_msgs</string>
     <string name="nexus_llm_prompt">System prompt</string>
     <string name="nexus_tts_speaker">TTS speaker ID</string>
-    <string name="nexus_tts_speaker_hint">Usually 0–4 for vits-zh-ll</string>
-    <string name="nexus_tts_speaker_value">%1$d · usually 0–4</string>
+    <string name="nexus_tts_speaker_hint">0–200</string>
+    <string name="nexus_tts_speaker_value">%1$d · 0–200</string>
+    <string name="nexus_tts_speed">TTS speed</string>
+    <string name="nexus_tts_speed_value">%1$.1fx · 0.5–2.0</string>
+    <string name="nexus_tts_speed_hint">Higher = faster (fanchen often 1.2–1.5)</string>
+    <string name="nexus_tts_preview_text_label">Preview text</string>
+    <string name="nexus_tts_preview_default">你好，这是音色测试。</string>
+    <string name="nexus_tts_preview_play">Preview voice</string>
+    <string name="nexus_tts_preview_playing">Playing…</string>
+    <string name="nexus_tts_preview_missing">TTS model not ready</string>
+    <string name="nexus_tts_preview_fail">Preview failed: %1$s</string>
     <string name="nexus_notify_enabled">Enable webhook notifications</string>
     <string name="nexus_webhook_url">Webhook URL</string>
     <string name="nexus_notify_sms">SMS webhook</string>

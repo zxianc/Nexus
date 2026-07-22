@@ -64,10 +64,15 @@ data class NexusConfig(
     @SerializedName("dialer_takeover") val dialerTakeover: Boolean = true,
     /** Absolute path to STT onnx; null = default under files/models/sense-voice. */
     @SerializedName("stt_model_path") val sttModelPath: String? = null,
-    /** Absolute path to TTS onnx; null = default under files/models/vits-zh-ll. */
+    /** Absolute path to TTS onnx; null = default under files/models/vits-zh-hf-fanchen-C. */
     @SerializedName("tts_model_path") val ttsModelPath: String? = null,
-    /** VITS speaker id（现行 vits-zh-ll 一般为 0～4）。 */
+    /** VITS speaker id（设置可选 0～200；fanchen-C 有效约 0～186）。 */
     @SerializedName("tts_speaker_id") val ttsSpeakerId: Int = 0,
+    /**
+     * TTS speaking rate. 1.0 = normal; higher = faster (typical useful range 0.5～2.0).
+     * Mapped to VITS lengthScale = 1/speed at load time.
+     */
+    @SerializedName("tts_speed") val ttsSpeed: Float = 1.0f,
     /** Play a fixed TTS greeting right after AI answer. */
     @SerializedName("greeting_enabled") val greetingEnabled: Boolean = false,
     @SerializedName("greeting_text") val greetingText: String = DEFAULT_GREETING_TEXT,

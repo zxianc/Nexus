@@ -100,14 +100,17 @@ adb install -r app\build\outputs\apk\core\debug\phone-22-core-debug.apk
 1. 设为 **默认电话应用**
 2. 打开 App → **设置 → Nexus / AI**
 3. 开启 Nexus 策略，将对应 SIM 设为 **AI**
-4. 配置 LLM API Key / Webhook；导入或拷贝 STT/TTS 模型到 App 私有 `files/models/`
+4. 配置 LLM API Key / Webhook；导入或拷贝 STT/TTS 模型（见下方）
 
 ## 模型与配置位置
+
+完整步骤（从哪下载、下载哪套、怎么导入）：[`doc/01_replace_models.md`](../doc/01_replace_models.md)。
 
 | 内容 | 路径 |
 |------|------|
 | 配置 | App 私有 `shared_prefs/nexus_config.xml`（文件管理器不可见） |
-| 模型 | `files/models/sense-voice`、`files/models/vits-zh-ll` |
+| 模型（默认） | `files/models/sense-voice`、`files/models/vits-zh-hf-fanchen-C`（旧 `vits-zh-ll` 仍可回退） |
+| 模型（设置里选择后） | `files/imported/stt`、`files/imported/tts` |
 | 通话存档 | `Android/data/<applicationId>/files/nexus_calls/calls/<id>/` |
 
 卸载 App 会清空私有目录中的模型与配置；覆盖安装（`adb install -r`）一般保留。

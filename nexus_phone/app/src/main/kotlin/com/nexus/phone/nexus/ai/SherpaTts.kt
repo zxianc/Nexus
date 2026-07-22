@@ -5,6 +5,7 @@ import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import com.nexus.phone.nexus.config.ConfigRepository
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -15,16 +16,21 @@ data class TtsAudio(
 
 /**
  * Offline VITS TTS via sherpa-onnx 1.13.4 AAR.
+ *
+ * [speed]: user-facing rate (1.0 = normal, higher = faster). Applied as
+ * `lengthScale = 1/speed` (matches sherpa fanchen examples using length-scale &lt; 1).
  */
 class SherpaTts(
     private val layout: ModelLayout,
-    private val speakerId: Int = 0, // match Go ai_call default -tts-sid
-    private val speed: Float = 1.0f,
+    private val speakerId: Int = 0,
+    val speed: Float = 1.0f,
     private val threads: Int = 2,
 ) : AutoCloseable {
     private val lock = Any()
     private var tts: OfflineTts? = null
     private val ready = AtomicBoolean(false)
+    private val clampedSpeed =
+        speed.coerceIn(ConfigRepository.TTS_SPEED_MIN, ConfigRepository.TTS_SPEED_MAX)
 
     fun ensureLoaded(): Boolean {
         if (ready.get()) return true
@@ -40,6 +46,7 @@ class SherpaTts(
                         .map { File(layout.ttsSidecarDir, it) }
                         .filter { it.isFile }
                         .joinToString(",") { it.absolutePath }
+                val lengthScale = (1.0f / clampedSpeed).coerceIn(0.5f, 2.0f)
                 val modelConfig =
                     OfflineTtsModelConfig().apply {
                         vits =
@@ -47,6 +54,7 @@ class SherpaTts(
                                 model = layout.ttsModel.absolutePath
                                 lexicon = layout.ttsLexicon.absolutePath
                                 tokens = layout.ttsTokens.absolutePath
+                                this.lengthScale = lengthScale
                             }
                         numThreads = threads
                         debug = false
@@ -62,10 +70,11 @@ class SherpaTts(
                 ready.set(true)
                 Log.i(
                     TAG,
-                    "TTS loaded from ${layout.ttsModel} sampleRate=${tts!!.sampleRate()} speakers=${tts!!.numSpeakers()}",
+                    "TTS loaded from ${layout.ttsModel} sampleRate=${tts!!.sampleRate()} " +
+                        "speakers=${tts!!.numSpeakers()} speed=$clampedSpeed lengthScale=$lengthScale",
                 )
                 true
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "TTS load failed", e)
                 false
             }
@@ -79,7 +88,8 @@ class SherpaTts(
         val engine = tts ?: return null
         synchronized(lock) {
             return try {
-                val audio = engine.generate(trimmed, sid, speed)
+                // lengthScale already encodes rate; keep generate speed at 1.0
+                val audio = engine.generate(trimmed, sid, 1.0f)
                 TtsAudio(audio.samples, audio.sampleRate)
             } catch (e: Exception) {
                 Log.e(TAG, "TTS synthesize failed", e)

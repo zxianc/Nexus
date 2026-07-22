@@ -7,6 +7,7 @@
 | 文档 | 内容 |
 |------|------|
 | [`00_framework_overview.md`](00_framework_overview.md) | **框架总览**（进程、配置、Webhook、路径） |
+| [`01_replace_models.md`](01_replace_models.md) | **替换 STT/TTS 模型**（下载来源、选哪套、装进手机） |
 | [`../nexus_phone/README.md`](../nexus_phone/README.md) | **App 编译 / 签名 / 安装** |
 | [`../zygisk_module/doc/README.md`](../zygisk_module/doc/README.md) | Hook 编译 / 安装 / 验证 |
 
@@ -16,6 +17,7 @@
 |------|------|
 | [`../nexus_app/README.md`](../nexus_app/README.md) | 旧 App（`com.nexus.assistant`）— 已弃用 |
 | [`../docs/superpowers/archive/2026-07-20-nexus-app-architecture/`](../docs/superpowers/archive/2026-07-20-nexus-app-architecture/) | 旧 App 架构提案归档 |
+| [`../docs/superpowers/archive/2026-07-23-tts-speaker-speed/`](../docs/superpowers/archive/2026-07-23-tts-speaker-speed/) | TTS 音色 / 语速 / 试听提案归档 |
 | [`../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md`](../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md) | Fossify 魔改设计 |
 
 ## 仓库布局
