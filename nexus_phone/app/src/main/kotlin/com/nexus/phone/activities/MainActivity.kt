@@ -229,6 +229,7 @@ class MainActivity : SimpleActivity() {
                     R.id.sort -> showSortingDialog(showCustomSorting = getCurrentFragment() is FavoritesFragment)
                     R.id.filter -> showFilterDialog()
                     R.id.more_apps_from_us -> launchMoreAppsFromUsIntent()
+                    R.id.nexus_settings -> launchNexusSettings()
                     R.id.settings -> launchSettings()
                     R.id.change_view_type -> changeViewType()
                     R.id.column_count -> changeColumnCount()
@@ -557,6 +558,11 @@ class MainActivity : SimpleActivity() {
     private fun launchSettings() {
         hideKeyboard()
         startActivity(Intent(applicationContext, SettingsActivity::class.java))
+    }
+
+    private fun launchNexusSettings() {
+        hideKeyboard()
+        startActivity(Intent(applicationContext, com.nexus.phone.nexus.ui.NexusSettingsActivity::class.java))
     }
 
     private fun launchAbout() {

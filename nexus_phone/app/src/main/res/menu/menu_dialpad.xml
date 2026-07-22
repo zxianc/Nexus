@@ -2,8 +2,13 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/nexus_settings"
+        android:icon="@drawable/ic_settings_cog_vector"
+        android:title="@string/nexus_settings"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/add_number_to_contact"
         android:icon="@drawable/ic_plus_vector"
         android:title="@string/add_number_to_contact"
-        app:showAsAction="always" />
+        app:showAsAction="ifRoom" />
 </menu>

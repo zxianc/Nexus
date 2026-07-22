@@ -35,10 +35,15 @@
         android:title="@string/column_count"
         app:showAsAction="never" />
     <item
+        android:id="@+id/nexus_settings"
+        android:icon="@drawable/ic_settings_cog_vector"
+        android:title="@string/nexus_settings"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/settings"
         android:icon="@drawable/ic_settings_cog_vector"
         android:title="@string/settings"
-        app:showAsAction="never" />
+        app:showAsAction="ifRoom" />
     <item
         android:id="@+id/about"
         android:icon="@drawable/ic_info_vector"

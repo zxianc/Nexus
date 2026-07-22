@@ -225,6 +225,9 @@ class DialpadActivity : SimpleActivity() {
     private fun setupOptionsMenu() {
         binding.dialpadToolbar.setOnMenuItemClickListener { menuItem ->
             when (menuItem.itemId) {
+                R.id.nexus_settings -> {
+                    startActivity(Intent(this, com.nexus.phone.nexus.ui.NexusSettingsActivity::class.java))
+                }
                 R.id.add_number_to_contact -> addNumberToContact()
                 else -> return@setOnMenuItemClickListener false
             }
