@@ -1,6 +1,8 @@
 package com.nexus.phone.nexus.ui
 
 import android.os.Bundle
+import android.view.View
+import android.widget.EditText
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.nexus.phone.R
 import com.nexus.phone.activities.SimpleActivity
@@ -19,6 +21,7 @@ import com.nexus.phone.nexus.notify.SmsWatcher
 import com.nexus.phone.nexus.telecom.DialerTakeover
 import org.fossify.commons.dialogs.RadioGroupDialog
 import org.fossify.commons.extensions.getProperPrimaryColor
+import org.fossify.commons.extensions.getProperTextColor
 import org.fossify.commons.extensions.toast
 import org.fossify.commons.extensions.updateTextColors
 import org.fossify.commons.extensions.viewBinding
@@ -30,6 +33,7 @@ import org.fossify.commons.views.MyTextView
 class NexusSettingsActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityNexusSettingsBinding::inflate)
     private lateinit var repo: ConfigRepository
+    private var bindingUi = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,12 +46,22 @@ class NexusSettingsActivity : SimpleActivity() {
             setupMaterialScrollListener(nexusSettingsScroll, nexusSettingsAppbar)
         }
         setupClicks()
+        setupAutoSave()
     }
 
     override fun onResume() {
         super.onResume()
         setupTopAppBar(binding.nexusSettingsAppbar, NavigationIcon.Arrow)
         bind(repo.refreshSimMetadata())
+        applyThemeColors()
+    }
+
+    override fun onPause() {
+        saveEditable(showToast = false)
+        super.onPause()
+    }
+
+    private fun applyThemeColors() {
         updateTextColors(binding.nexusSettingsHolder)
         arrayOf(
             binding.nexusSectionPolicy,
@@ -56,6 +70,16 @@ class NexusSettingsActivity : SimpleActivity() {
             binding.nexusSectionLlm,
             binding.nexusSectionNotify,
         ).forEach { it.setTextColor(getProperPrimaryColor()) }
+        colorSimRows()
+    }
+
+    private fun colorSimRows() {
+        val textColor = getProperTextColor()
+        for (i in 0 until binding.nexusSimsContainer.childCount) {
+            val row = binding.nexusSimsContainer.getChildAt(i)
+            row.findViewById<MyTextView>(R.id.nexus_sim_title)?.setTextColor(textColor)
+            row.findViewById<MyTextView>(R.id.nexus_sim_policy)?.setTextColor(textColor)
+        }
     }
 
     private fun setupClicks() {
@@ -72,50 +96,88 @@ class NexusSettingsActivity : SimpleActivity() {
         }
         binding.nexusRefreshSimsHolder.setOnClickListener {
             bind(repo.refreshSimMetadata())
+            applyThemeColors()
             toast(R.string.nexus_sims_refreshed)
         }
-        binding.nexusSaveHolder.setOnClickListener { saveEditable() }
+    }
+
+    private fun setupAutoSave() {
+        val focusSaver =
+            View.OnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus && !bindingUi) saveEditable(showToast = false)
+            }
+        listOf(
+            binding.nexusGreetingText,
+            binding.nexusLlmModel,
+            binding.nexusLlmApiKey,
+            binding.nexusLlmBaseUrl,
+            binding.nexusLlmMaxMsgs,
+            binding.nexusLlmPrompt,
+            binding.nexusTtsSpeaker,
+            binding.nexusWebhookUrl,
+        ).forEach { it.onFocusChangeListener = focusSaver }
+
+        fun switchSaver(block: () -> Unit) {
+            if (bindingUi) return
+            block()
+            saveEditable(showToast = false)
+        }
+        binding.nexusGreetingEnabled.setOnClickListener {
+            switchSaver { }
+        }
+        binding.nexusGreetingHolder.setOnClickListener {
+            binding.nexusGreetingEnabled.toggle()
+            switchSaver { }
+        }
+        binding.nexusLlmEnabled.setOnClickListener { switchSaver { } }
+        binding.nexusLlmHolder.setOnClickListener {
+            binding.nexusLlmEnabled.toggle()
+            switchSaver { }
+        }
+        binding.nexusNotifyEnabled.setOnClickListener { switchSaver { } }
+        binding.nexusNotifyHolder.setOnClickListener {
+            binding.nexusNotifyEnabled.toggle()
+            switchSaver { }
+        }
+        binding.nexusNotifySms.setOnClickListener { switchSaver { } }
+        binding.nexusNotifyCall.setOnClickListener { switchSaver { } }
     }
 
     private fun bind(cfg: NexusConfig) {
+        bindingUi = true
         binding.nexusStatus.text = DialerTakeover.probe(this).message +
             "\n" + getString(R.string.nexus_sims_detected, cfg.sims.size)
         binding.nexusTakeover.isChecked = cfg.dialerTakeover
         binding.nexusGreetingEnabled.isChecked = cfg.greetingEnabled
-        binding.nexusGreetingText.setText(cfg.greetingText.ifBlank { DEFAULT_GREETING_TEXT })
+        setTextIfChanged(binding.nexusGreetingText, cfg.greetingText.ifBlank { DEFAULT_GREETING_TEXT })
         binding.nexusLlmEnabled.isChecked = cfg.llm.enabled
-        binding.nexusLlmModel.setText(cfg.llm.model)
-        binding.nexusLlmApiKey.setText(cfg.llm.apiKey)
-        binding.nexusLlmBaseUrl.setText(cfg.llm.baseUrl)
-        binding.nexusLlmMaxMsgs.setText(cfg.llm.maxMsgs.toString())
-        binding.nexusLlmPrompt.setText(cfg.llm.systemPrompt)
-        binding.nexusTtsSpeaker.setText(cfg.ttsSpeakerId.toString())
+        setTextIfChanged(binding.nexusLlmModel, cfg.llm.model)
+        setTextIfChanged(binding.nexusLlmApiKey, cfg.llm.apiKey)
+        setTextIfChanged(binding.nexusLlmBaseUrl, cfg.llm.baseUrl)
+        setTextIfChanged(binding.nexusLlmMaxMsgs, cfg.llm.maxMsgs.toString())
+        setTextIfChanged(binding.nexusLlmPrompt, cfg.llm.systemPrompt)
+        setTextIfChanged(binding.nexusTtsSpeaker, cfg.ttsSpeakerId.toString())
         binding.nexusNotifyEnabled.isChecked = cfg.notify.enabled
-        binding.nexusWebhookUrl.setText(cfg.notify.webhookUrl)
+        setTextIfChanged(binding.nexusWebhookUrl, cfg.notify.webhookUrl)
         binding.nexusNotifySms.isChecked = cfg.notify.smsEnabled
         binding.nexusNotifyCall.isChecked = cfg.notify.callEnabled
         binding.nexusArchivePath.text =
             getString(R.string.nexus_archive_path, CallFinalizer.archiveRoot(this).absolutePath)
         rebuildSims(cfg)
+        bindingUi = false
     }
 
-    private fun saveEditable() {
-        val maxMsgs =
-            binding.nexusLlmMaxMsgs.text.toString().trim().toIntOrNull()
-                ?: run {
-                    toast(R.string.nexus_max_msgs_invalid)
-                    return
-                }
-        if (maxMsgs < 2) {
-            toast(R.string.nexus_max_msgs_min)
-            return
+    private fun setTextIfChanged(edit: EditText, value: String) {
+        if (edit.text?.toString() != value) {
+            edit.setText(value)
         }
-        val speakerId =
-            binding.nexusTtsSpeaker.text.toString().trim().toIntOrNull()
-                ?: run {
-                    toast(R.string.nexus_speaker_invalid)
-                    return
-                }
+    }
+
+    private fun saveEditable(showToast: Boolean) {
+        if (bindingUi) return
+        val maxMsgs = binding.nexusLlmMaxMsgs.text.toString().trim().toIntOrNull() ?: 8
+        val speakerId = binding.nexusTtsSpeaker.text.toString().trim().toIntOrNull() ?: 0
+        if (maxMsgs < 2) return
         val cur = repo.load()
         repo.save(
             cur.copy(
@@ -145,8 +207,7 @@ class NexusSettingsActivity : SimpleActivity() {
             ),
         )
         SmsWatcher.ensureRegistered(this)
-        toast(R.string.nexus_saved)
-        bind(repo.load())
+        if (showToast) toast(R.string.nexus_saved)
     }
 
     private fun toggleTakeover(enable: Boolean) {
@@ -167,6 +228,7 @@ class NexusSettingsActivity : SimpleActivity() {
         cfg.sims.sortedBy { it.slot }.forEach { sim ->
             container.addView(buildSimRow(sim))
         }
+        colorSimRows()
     }
 
     private fun buildSimRow(sim: SimConfig): ConstraintLayout {
@@ -178,6 +240,9 @@ class NexusSettingsActivity : SimpleActivity() {
             ) as ConstraintLayout
         val title = row.findViewById<MyTextView>(R.id.nexus_sim_title)
         val value = row.findViewById<MyTextView>(R.id.nexus_sim_policy)
+        val textColor = getProperTextColor()
+        title.setTextColor(textColor)
+        value.setTextColor(textColor)
         title.text =
             getString(
                 R.string.nexus_sim_title,
