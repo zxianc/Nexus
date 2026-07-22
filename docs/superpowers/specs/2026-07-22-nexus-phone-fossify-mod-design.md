@@ -2,7 +2,7 @@
 
 **日期：** 2026-07-22  
 **分支：** `feature/nexus-phone-fossify`  
-**状态：** 设计已确认，待写实现计划  
+**状态：** 设计已确认；实现计划见 [`../plans/2026-07-22-nexus-phone-fossify-mod.md`](../plans/2026-07-22-nexus-phone-fossify-mod.md)
 
 ## 1. 背景与目标
 
@@ -188,7 +188,7 @@ Settings UI                 → M4 嵌入 Fossify 设置（可先内部 NexusSet
 ## 11. 分支与后续文档
 
 - **实现分支：** `feature/nexus-phone-fossify`（本 spec 所在分支）
-- **下一步：** 按本 spec 编写 `docs/superpowers/plans/2026-07-22-nexus-phone-fossify-mod.md`（writing-plans），再按 M0 起执行
+- **下一步：** 按 [`../plans/2026-07-22-nexus-phone-fossify-mod.md`](../plans/2026-07-22-nexus-phone-fossify-mod.md) 从 Task 1 / G0 起执行
 - **参考上游：** https://github.com/FossifyOrg/Phone（拷贝时记录 commit SHA 于 plan 或 README）
 
 ## 12. 修订记录
