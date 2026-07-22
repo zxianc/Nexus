@@ -38,6 +38,8 @@ android {
         versionCode = project.property("VERSION_CODE").toString().toInt()
     }
 
+    // Keep R/manifest relative names under com.nexus.phone while APP_ID satisfies Commons.
+
     signingConfigs {
         if (keystorePropertiesFile.exists()) {
             register("release") {
@@ -113,7 +115,7 @@ android {
         )
     }
 
-    namespace = project.property("APP_ID").toString()
+    namespace = project.property("APP_NAMESPACE").toString()
 
     lint {
         checkReleaseBuilds = false
