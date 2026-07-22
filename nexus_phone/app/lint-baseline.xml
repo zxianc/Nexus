@@ -7,7 +7,7 @@
         errorLine1="            telecomManager.cancelMissedCallsNotification()"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/extensions/Context.kt"
+            file="src/main/kotlin/com/nexus/phone/extensions/Context.kt"
             line="75"
             column="13"/>
     </issue>
@@ -40,7 +40,7 @@
         errorLine1="                launchChangeAppLanguageIntent()"
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/SettingsActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/SettingsActivity.kt"
             line="180"
             column="17"/>
     </issue>
@@ -62,7 +62,7 @@
         errorLine1="class SplashActivity : BaseSplashActivity() {"
         errorLine2="      ~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/SplashActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/SplashActivity.kt"
             line="6"
             column="7"/>
     </issue>
@@ -177,7 +177,7 @@
         errorLine1="                    callDraggable.setImageDrawable(getDrawable(R.drawable.ic_phone_down_vector))"
         errorLine2="                                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="348"
             column="52"/>
     </issue>
@@ -188,7 +188,7 @@
         errorLine1="                            callDraggable.setImageDrawable(getDrawable(drawableRes))"
         errorLine2="                                                           ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="391"
             column="60"/>
     </issue>
@@ -199,7 +199,7 @@
         errorLine1="                            callDraggable.setImageDrawable(getDrawable(drawableRes))"
         errorLine2="                                                           ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="401"
             column="60"/>
     </issue>
@@ -210,7 +210,7 @@
         errorLine1="                        val rippleBg = resources.getDrawable(R.drawable.ic_call_accept, theme) as RippleDrawable"
         errorLine2="                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="642"
             column="40"/>
     </issue>
@@ -221,7 +221,7 @@
         errorLine1="                        layerDrawable.setDrawableByLayerId(R.id.accept_call_icon, getDrawable(acceptDrawableId))"
         errorLine2="                                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="644"
             column="83"/>
     </issue>
@@ -232,7 +232,7 @@
         errorLine1="                        val contactDrawable = activity.getDrawable(R.drawable.ic_person_vector)"
         errorLine2="                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/adapters/ConferenceCallsAdapter.kt"
+            file="src/main/kotlin/com/nexus/phone/adapters/ConferenceCallsAdapter.kt"
             line="55"
             column="47"/>
     </issue>
@@ -243,7 +243,7 @@
         errorLine1="        val drawable = resources.getDrawable(R.drawable.shortcut_dialpad)"
         errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/MainActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/MainActivity.kt"
             line="304"
             column="24"/>
     </issue>
@@ -1145,7 +1145,7 @@
         errorLine1="            screenOnWakeLock!!.release()"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="107"
             column="13"/>
     </issue>
@@ -1156,7 +1156,7 @@
         errorLine1="                notifyDataSetChanged()"
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/fragments/MyViewPagerFragment.kt"
+            file="src/main/kotlin/com/nexus/phone/fragments/MyViewPagerFragment.kt"
             line="56"
             column="17"/>
     </issue>
@@ -1167,7 +1167,7 @@
         errorLine1="                notifyDataSetChanged()"
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/fragments/MyViewPagerFragment.kt"
+            file="src/main/kotlin/com/nexus/phone/fragments/MyViewPagerFragment.kt"
             line="61"
             column="17"/>
     </issue>
@@ -1237,7 +1237,7 @@
     <issue
         id="UnusedResources"
         message="The resource `R.string.package_name` appears to be unused"
-        errorLine1="    &lt;string name=&quot;package_name&quot;>org.fossify.phone&lt;/string>"
+        errorLine1="    &lt;string name=&quot;package_name&quot;>com.nexus.phone&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/donottranslate.xml"
@@ -1295,7 +1295,7 @@
         errorLine1="                shortcutManager.dynamicShortcuts = listOf(launchDialpad)"
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/MainActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/MainActivity.kt"
             line="294"
             column="17"/>
     </issue>
@@ -1306,7 +1306,7 @@
         errorLine1="            val photoUri = Uri.parse(callContact.photoUri)"
         errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/CallContactAvatarHelper.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/CallContactAvatarHelper.kt"
             line="18"
             column="28"/>
     </issue>
@@ -1317,7 +1317,7 @@
         errorLine1="        val output = Bitmap.createBitmap(bitmap.width, bitmap.width, Bitmap.Config.ARGB_8888)"
         errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/CallContactAvatarHelper.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/CallContactAvatarHelper.kt"
             line="36"
             column="22"/>
     </issue>
@@ -1328,7 +1328,7 @@
         errorLine1="        prefs.edit().putPhoneAccountHandle("
         errorLine2="        ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="49"
             column="9"/>
     </issue>
@@ -1339,7 +1339,7 @@
         errorLine1="        prefs.edit().remove(getKeyForCustomSIM(number)).apply()"
         errorLine2="        ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="86"
             column="9"/>
     </issue>
@@ -1350,7 +1350,7 @@
         errorLine1="        set(showTabs) = prefs.edit().putInt(SHOW_TABS, showTabs).apply()"
         errorLine2="                        ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="101"
             column="25"/>
     </issue>
@@ -1361,7 +1361,7 @@
         errorLine1="        set(groupSubsequentCalls) = prefs.edit().putBoolean(GROUP_SUBSEQUENT_CALLS, groupSubsequentCalls).apply()"
         errorLine2="                                    ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="105"
             column="37"/>
     </issue>
@@ -1372,7 +1372,7 @@
         errorLine1="        set(openDialPad) = prefs.edit().putBoolean(OPEN_DIAL_PAD_AT_LAUNCH, openDialPad).apply()"
         errorLine2="                           ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="109"
             column="28"/>
     </issue>
@@ -1383,7 +1383,7 @@
         errorLine1="        set(disableProximitySensor) = prefs.edit().putBoolean(DISABLE_PROXIMITY_SENSOR, disableProximitySensor).apply()"
         errorLine2="                                      ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="113"
             column="39"/>
     </issue>
@@ -1394,7 +1394,7 @@
         errorLine1="        set(disableSwipeToAnswer) = prefs.edit().putBoolean(DISABLE_SWIPE_TO_ANSWER, disableSwipeToAnswer).apply()"
         errorLine2="                                    ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="117"
             column="37"/>
     </issue>
@@ -1405,7 +1405,7 @@
         errorLine1="        set(wasOverlaySnackbarConfirmed) = prefs.edit().putBoolean(WAS_OVERLAY_SNACKBAR_CONFIRMED, wasOverlaySnackbarConfirmed).apply()"
         errorLine2="                                           ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="121"
             column="44"/>
     </issue>
@@ -1416,7 +1416,7 @@
         errorLine1="        set(dialpadVibration) = prefs.edit().putBoolean(DIALPAD_VIBRATION, dialpadVibration).apply()"
         errorLine2="                                ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="125"
             column="33"/>
     </issue>
@@ -1427,7 +1427,7 @@
         errorLine1="        set(hideDialpadNumbers) = prefs.edit().putBoolean(HIDE_DIALPAD_NUMBERS, hideDialpadNumbers).apply()"
         errorLine2="                                  ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="129"
             column="35"/>
     </issue>
@@ -1438,7 +1438,7 @@
         errorLine1="        set(dialpadBeeps) = prefs.edit().putBoolean(DIALPAD_BEEPS, dialpadBeeps).apply()"
         errorLine2="                            ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="133"
             column="29"/>
     </issue>
@@ -1449,7 +1449,7 @@
         errorLine1="        set(alwaysShowFullscreen) = prefs.edit().putBoolean(ALWAYS_SHOW_FULLSCREEN, alwaysShowFullscreen).apply()"
         errorLine2="                                    ~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/helpers/Config.kt"
+            file="src/main/kotlin/com/nexus/phone/helpers/Config.kt"
             line="137"
             column="37"/>
     </issue>
@@ -1460,7 +1460,7 @@
         errorLine1="                        data = Uri.parse(&quot;package:$packageName&quot;)"
         errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/DialerActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/DialerActivity.kt"
             line="69"
             column="32"/>
     </issue>
@@ -1471,7 +1471,7 @@
         errorLine1="                        data = Uri.parse(&quot;package:$packageName&quot;)"
         errorLine2="                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/DialerActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/DialerActivity.kt"
             line="69"
             column="32"/>
     </issue>
@@ -1592,7 +1592,7 @@
         errorLine1="                    callerNumber.text = &quot;$number - $numberLabel&quot;"
         errorLine2="                                        ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="586"
             column="41"/>
     </issue>
@@ -1603,7 +1603,7 @@
         errorLine1="                            callSimId.text = sim.id.toString()"
         errorLine2="                                             ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/activities/CallActivity.kt"
+            file="src/main/kotlin/com/nexus/phone/activities/CallActivity.kt"
             line="628"
             column="46"/>
     </issue>
@@ -1614,7 +1614,7 @@
         errorLine1="            exportCallHistoryFilename.setText(&quot;call_history_${activity.getCurrentFormattedDateTime()}&quot;)"
         errorLine2="                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/dialogs/ExportCallHistoryDialog.kt"
+            file="src/main/kotlin/com/nexus/phone/dialogs/ExportCallHistoryDialog.kt"
             line="13"
             column="47"/>
     </issue>
@@ -1625,7 +1625,7 @@
         errorLine1="            exportCallHistoryFilename.setText(&quot;call_history_${activity.getCurrentFormattedDateTime()}&quot;)"
         errorLine2="                                               ~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/dialogs/ExportCallHistoryDialog.kt"
+            file="src/main/kotlin/com/nexus/phone/dialogs/ExportCallHistoryDialog.kt"
             line="13"
             column="48"/>
     </issue>
@@ -1636,7 +1636,7 @@
         errorLine1="                    itemRecentsSimId.text = call.simID.toString()"
         errorLine2="                                            ~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/adapters/RecentCallsAdapter.kt"
+            file="src/main/kotlin/com/nexus/phone/adapters/RecentCallsAdapter.kt"
             line="578"
             column="45"/>
     </issue>
@@ -1647,7 +1647,7 @@
         errorLine1="                text = &quot;${index + 1} - ${SIMAccount.label}&quot;"
         errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/dialogs/SelectSIMDialog.kt"
+            file="src/main/kotlin/com/nexus/phone/dialogs/SelectSIMDialog.kt"
             line="35"
             column="24"/>
     </issue>
@@ -1658,7 +1658,7 @@
         errorLine1="                text = &quot;${index + 1} - ${SIMAccount.label}&quot;"
         errorLine2="                          ~~~~~~~~~">
         <location
-            file="src/main/kotlin/org/fossify/phone/dialogs/SelectSIMDialog.kt"
+            file="src/main/kotlin/com/nexus/phone/dialogs/SelectSIMDialog.kt"
             line="35"
             column="27"/>
     </issue>

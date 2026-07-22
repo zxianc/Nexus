@@ -97,7 +97,7 @@
             android:configChanges="orientation"
             android:exported="false"
             android:label="@string/conference"
-            android:parentActivityName="org.fossify.phone.activities.CallActivity" />
+            android:parentActivityName="com.nexus.phone.activities.CallActivity" />
 
         <activity
             android:name=".activities.SettingsActivity"
@@ -113,7 +113,7 @@
         </activity>
 
         <activity
-            android:name="org.fossify.phone.activities.CallActivity"
+            android:name="com.nexus.phone.activities.CallActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:label="@string/ongoing_call"

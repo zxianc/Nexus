@@ -53,7 +53,7 @@
     <ID>MaxLineLength:CallActivity.kt$CallActivity$binding.callToggleMicrophone.contentDescription = getString(if (isMicrophoneOff) R.string.turn_microphone_on else R.string.turn_microphone_off)</ID>
     <ID>MaxLineLength:CallActivity.kt$CallActivity$bottom = binding.root.bottom - binding.callEnd.top + resources.getDimensionPixelSize(R.dimen.activity_margin)</ID>
     <ID>MaxLineLength:CallActivity.kt$CallActivity$private</ID>
-    <ID>MaxLineLength:CallActivity.kt$CallActivity$proximityWakeLock = powerManager.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "org.fossify.phone:wake_lock")</ID>
+    <ID>MaxLineLength:CallActivity.kt$CallActivity$proximityWakeLock = powerManager.newWakeLock(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, "com.nexus.phone:wake_lock")</ID>
     <ID>MaxLineLength:CallActivity.kt$CallActivity$startArrowAnimation(callLeftArrow, initialLeftArrowX, initialLeftArrowScaleX, initialLeftArrowScaleY, leftArrowTranslation)</ID>
     <ID>MaxLineLength:CallActivity.kt$CallActivity$startArrowAnimation(callRightArrow, initialRightArrowX, initialRightArrowScaleX, initialRightArrowScaleY, rightArrowTranslation)</ID>
     <ID>MaxLineLength:CallActivity.kt$CallActivity$toggleButtonColor(binding.callToggleSpeaker, enabled = route != AudioRoute.EARPIECE &amp;&amp; route != AudioRoute.WIRED_HEADSET)</ID>
@@ -121,7 +121,7 @@
     <ID>NestedBlockDepth:DialerActivity.kt$DialerActivity$override fun onActivityResult(requestCode: Int, resultCode: Int, resultData: Intent?)</ID>
     <ID>NestedBlockDepth:MainActivity.kt$MainActivity$private fun getDefaultTab(): Int</ID>
     <ID>NestedBlockDepth:RecentsHelper.kt$RecentsHelper$@SuppressLint("NewApi") private fun getRecents( contacts: List&lt;Contact&gt;, selection: String? = null, selectionParams: Array&lt;String&gt;? = null, ): List&lt;RecentCall&gt;</ID>
-    <ID>NewLineAtEndOfFile:RecentCallsAdapter.kt$org.fossify.phone.adapters.RecentCallsAdapter.kt</ID>
+    <ID>NewLineAtEndOfFile:RecentCallsAdapter.kt$com.nexus.phone.adapters.RecentCallsAdapter.kt</ID>
     <ID>SwallowedException:CallActivity.kt$CallActivity$e: Exception</ID>
     <ID>SwallowedException:CallContactHelper.kt$e: NullPointerException</ID>
     <ID>SwallowedException:FastScrollerView.kt$e: IndexOutOfBoundsException</ID>
@@ -146,8 +146,8 @@
     <ID>UtilityClassWithPublicConstructor:CallManager.kt$CallManager</ID>
     <ID>WildcardImport:CallActivity.kt$import org.fossify.commons.extensions.*</ID>
     <ID>WildcardImport:CallActivity.kt$import org.fossify.commons.helpers.*</ID>
-    <ID>WildcardImport:CallActivity.kt$import org.fossify.phone.extensions.*</ID>
-    <ID>WildcardImport:CallActivity.kt$import org.fossify.phone.helpers.*</ID>
+    <ID>WildcardImport:CallActivity.kt$import com.nexus.phone.extensions.*</ID>
+    <ID>WildcardImport:CallActivity.kt$import com.nexus.phone.helpers.*</ID>
     <ID>WildcardImport:CallContactAvatarHelper.kt$import android.graphics.*</ID>
     <ID>WildcardImport:ChangeSortingDialog.kt$import org.fossify.commons.helpers.*</ID>
     <ID>WildcardImport:ContactsAdapter.kt$import android.view.*</ID>

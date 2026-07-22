@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<org.fossify.phone.fragments.RecentsFragment xmlns:android="http://schemas.android.com/apk/res/android"
+<com.nexus.phone.fragments.RecentsFragment xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/recents_fragment"
     android:layout_width="match_parent"
@@ -50,4 +50,4 @@
         android:layout_centerInParent="true"
         android:indeterminate="true"
         app:trackCornerRadius="@dimen/small_margin" />
-</org.fossify.phone.fragments.RecentsFragment>
+</com.nexus.phone.fragments.RecentsFragment>
