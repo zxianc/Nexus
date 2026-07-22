@@ -7,7 +7,6 @@ OnePlus 8T / LineageOS + Magisk：通话 AI 助理。
 | **电话 App（现行）** | [`nexus_phone/`](nexus_phone/) — `org.fossify.nexus.phone`（Kotlin：`com.nexus.phone`） |
 | Audio Hook | [`zygisk_module/`](zygisk_module/) — Magisk `nexus_audio_hook` |
 | 文档入口 | [`doc/00_framework_overview.md`](doc/00_framework_overview.md) · [`doc/01_replace_models.md`](doc/01_replace_models.md) · [`doc/README.md`](doc/README.md) |
-| 旧 App（已弃用） | [`nexus_app/`](nexus_app/) — 仅对照源码，勿再安装 |
 
 ## 快速编译正式包
 

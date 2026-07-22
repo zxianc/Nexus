@@ -74,7 +74,7 @@ STT/TTS 默认 `files/models/sense-voice` 与 `vits-zh-hf-fanchen-C`（旧包 `v
 
 
 
-**已弃用：** `nexus_app` / `com.nexus.assistant`（迁移期对照源码，勿再作为主安装包）。
+**已删除：** 旧 App `nexus_app` / `com.nexus.assistant`（能力已迁入 `nexus_phone`；历史提案见上方归档）。
 
 
 

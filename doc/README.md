@@ -15,8 +15,7 @@
 
 | 文档 | 内容 |
 |------|------|
-| [`../nexus_app/README.md`](../nexus_app/README.md) | 旧 App（`com.nexus.assistant`）— 已弃用 |
-| [`../docs/superpowers/archive/2026-07-20-nexus-app-architecture/`](../docs/superpowers/archive/2026-07-20-nexus-app-architecture/) | 旧 App 架构提案归档 |
+| [`../docs/superpowers/archive/2026-07-20-nexus-app-architecture/`](../docs/superpowers/archive/2026-07-20-nexus-app-architecture/) | 旧 App 架构提案归档（源码目录 `nexus_app/` 已删除） |
 | [`../docs/superpowers/archive/2026-07-23-tts-speaker-speed/`](../docs/superpowers/archive/2026-07-23-tts-speaker-speed/) | TTS 音色 / 语速 / 试听提案归档 |
 | [`../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md`](../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md) | Fossify 魔改设计 |
 
@@ -26,7 +25,6 @@
 Nexus/
 ├── README.md
 ├── nexus_phone/          # 现行电话 App（Fossify 魔改）
-├── nexus_app/            # 已弃用对照源
 ├── zygisk_module/        # Magisk audio hook
 ├── doc/                  # 现行文档
 └── docs/superpowers/     # 规格 / 计划 / 归档
