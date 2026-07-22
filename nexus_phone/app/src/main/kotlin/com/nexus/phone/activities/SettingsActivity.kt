@@ -62,7 +62,6 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private val binding by viewBinding(ActivitySettingsBinding::inflate)
-    private var nexusAiEntryAdded = false
     private val getContent =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
@@ -119,12 +118,12 @@ class SettingsActivity : SimpleActivity() {
         setupAlwaysShowFullscreen()
         setupCallsExport()
         setupCallsImport()
-        updateTextColors(binding.settingsHolder)
-
         setupNexusAiEntry()
+        updateTextColors(binding.settingsHolder)
 
         binding.apply {
             arrayOf(
+                settingsNexusSectionLabel,
                 settingsColorCustomizationSectionLabel,
                 settingsGeneralSettingsLabel,
                 settingsStartupLabel,
@@ -159,20 +158,9 @@ class SettingsActivity : SimpleActivity() {
     }
 
     private fun setupNexusAiEntry() {
-        if (nexusAiEntryAdded) return
-        nexusAiEntryAdded = true
-        val row =
-            android.widget.TextView(this).apply {
-                text = "Nexus / AI"
-                textSize = 16f
-                setPadding(48, 36, 48, 36)
-                setOnClickListener {
-                    startActivity(Intent(this@SettingsActivity, NexusSettingsActivity::class.java))
-                }
-            }
-        val insertAt =
-            binding.settingsHolder.indexOfChild(binding.settingsGeneralSettingsLabel).coerceAtLeast(0)
-        binding.settingsHolder.addView(row, insertAt)
+        binding.settingsNexusHolder.setOnClickListener {
+            startActivity(Intent(this, NexusSettingsActivity::class.java))
+        }
     }
 
     private fun setupCustomizeColors() {
