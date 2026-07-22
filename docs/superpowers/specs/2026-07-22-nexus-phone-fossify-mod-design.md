@@ -2,7 +2,8 @@
 
 **日期：** 2026-07-22  
 **分支：** `feature/nexus-phone-fossify`  
-**状态：** 设计已确认；实现计划见 [`../plans/2026-07-22-nexus-phone-fossify-mod.md`](../plans/2026-07-22-nexus-phone-fossify-mod.md)
+**状态：** 实现已落在 `feature/nexus-phone-fossify`（M0–M5 主路径完成；真机 G2/G3 需验证 PCM/存档）  
+**实现计划：** [`../plans/2026-07-22-nexus-phone-fossify-mod.md`](../plans/2026-07-22-nexus-phone-fossify-mod.md)
 
 ## 1. 背景与目标
 
