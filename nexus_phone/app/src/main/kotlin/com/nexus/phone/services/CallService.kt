@@ -1,8 +1,11 @@
 package com.nexus.phone.services
 
+import android.os.Handler
+import android.os.Looper
 import android.telecom.Call
 import android.telecom.CallAudioState
 import android.telecom.InCallService
+import android.util.Log
 import org.fossify.commons.extensions.canUseFullScreenIntent
 import org.fossify.commons.extensions.hasPermission
 import org.fossify.commons.helpers.PERMISSION_POST_NOTIFICATIONS
@@ -15,21 +18,39 @@ import com.nexus.phone.helpers.CallManager
 import com.nexus.phone.helpers.CallNotificationManager
 import com.nexus.phone.helpers.NoCall
 import com.nexus.phone.models.Events
+import com.nexus.phone.nexus.policy.CallPolicyBindings
+import com.nexus.phone.nexus.policy.PolicyAction
 import org.greenrobot.eventbus.EventBus
 
 class CallService : InCallService() {
     private val callNotificationManager by lazy { CallNotificationManager(this) }
 
-    private val callListener = object : Call.Callback() {
-        override fun onStateChanged(call: Call, state: Int) {
-            super.onStateChanged(call, state)
-            if (state == Call.STATE_DISCONNECTED || state == Call.STATE_DISCONNECTING) {
-                callNotificationManager.cancelNotification()
-            } else {
-                callNotificationManager.setupNotification()
+    private val callListener =
+        object : Call.Callback() {
+            override fun onStateChanged(call: Call, state: Int) {
+                super.onStateChanged(call, state)
+                when (state) {
+                    Call.STATE_ACTIVE -> {
+                        val decision = CallPolicyBindings.controller(this@CallService).onActive()
+                        if (decision.actions.contains(PolicyAction.StartBypass)) {
+                            Log.i(TAG, "StartBypass (PCM wiring in Task 7)")
+                            try {
+                                startActivity(CallActivity.getStartIntent(this@CallService))
+                            } catch (e: Exception) {
+                                Log.w(TAG, "start CallActivity on ACTIVE", e)
+                            }
+                        }
+                        callNotificationManager.setupNotification()
+                    }
+                    Call.STATE_DISCONNECTED, Call.STATE_DISCONNECTING -> {
+                        CallPolicyBindings.controller(this@CallService).onDisconnected()
+                        Log.i(TAG, "EndBypass (PCM wiring in Task 7)")
+                        callNotificationManager.cancelNotification()
+                    }
+                    else -> callNotificationManager.setupNotification()
+                }
             }
         }
-    }
 
     override fun onCallAdded(call: Call) {
         super.onCallAdded(call)
@@ -37,29 +58,51 @@ class CallService : InCallService() {
         CallManager.inCallService = this
         call.registerCallback(callListener)
 
-        // Incoming/Outgoing (locked): high priority (FSI)
-        // Incoming (unlocked): if user opted in, low priority ➜ manual activity start, otherwise high priority (FSI)
-        // Outgoing (unlocked): low priority ➜ manual activity start
         val isIncoming = !call.isOutgoing()
-        val isDeviceLocked = !powerManager.isInteractive || keyguardManager.isDeviceLocked
-        val lowPriority = when {
-            isIncoming && isDeviceLocked -> false
-            !isIncoming && isDeviceLocked -> false
-            isIncoming && !isDeviceLocked -> config.alwaysShowFullscreen
-            else -> true
+        if (isIncoming) {
+            val accountId = call.details?.accountHandle?.id
+            val sortOrder = CallPolicyBindings.sortOrderFor(this, call)
+            val peer = CallPolicyBindings.peerNumber(call)
+            val decision =
+                CallPolicyBindings.controller(this).onRinging(accountId, sortOrder, peer)
+
+            when {
+                decision.actions.contains(PolicyAction.Reject) -> {
+                    Log.i(TAG, "policy REJECT")
+                    call.reject(false, null)
+                    return
+                }
+                decision.actions.contains(PolicyAction.AnswerAi) -> {
+                    Log.i(TAG, "policy AI — skip ringing UI, answer")
+                    // Low-priority / quiet notification; do not start CallActivity while RINGING.
+                    callNotificationManager.setupNotification(true)
+                    CallPolicyBindings.answerWithRetry(call)
+                    return
+                }
+                else -> {
+                    // HUMAN / takeover off — Fossify default incoming UI path below
+                }
+            }
         }
+
+        val isDeviceLocked = !powerManager.isInteractive || keyguardManager.isDeviceLocked
+        val lowPriority =
+            when {
+                isIncoming && isDeviceLocked -> false
+                !isIncoming && isDeviceLocked -> false
+                isIncoming && !isDeviceLocked -> config.alwaysShowFullscreen
+                else -> true
+            }
 
         callNotificationManager.setupNotification(lowPriority)
         if (
-            lowPriority
-            || !hasPermission(PERMISSION_POST_NOTIFICATIONS)
-            || !canUseFullScreenIntent()
+            lowPriority ||
+                !hasPermission(PERMISSION_POST_NOTIFICATIONS) ||
+                !canUseFullScreenIntent()
         ) {
             try {
                 startActivity(CallActivity.getStartIntent(this))
             } catch (_: Exception) {
-                // seems like startActivity can throw AndroidRuntimeException and
-                // ActivityNotFoundException, not yet sure when and why, lets show a notification
                 callNotificationManager.setupNotification()
             }
         }
@@ -73,6 +116,7 @@ class CallService : InCallService() {
         if (CallManager.getPhoneState() == NoCall) {
             CallManager.inCallService = null
             callNotificationManager.cancelNotification()
+            CallPolicyBindings.controller(this).onDisconnected()
         } else {
             callNotificationManager.setupNotification()
             if (wasPrimaryCall) {
@@ -93,5 +137,9 @@ class CallService : InCallService() {
     override fun onDestroy() {
         super.onDestroy()
         callNotificationManager.cancelNotification()
+    }
+
+    companion object {
+        private const val TAG = "NexusCallService"
     }
 }
