@@ -36,6 +36,8 @@
     <string name="nexus_llm_max_msgs">max_msgs</string>
     <string name="nexus_llm_prompt">系统提示词</string>
     <string name="nexus_tts_speaker">TTS Speaker ID</string>
+    <string name="nexus_tts_speaker_hint">现行 vits-zh-ll 一般为 0～4</string>
+    <string name="nexus_tts_speaker_value">%1$d · 一般为 0～4</string>
     <string name="nexus_notify_enabled">启用 Webhook 通知</string>
     <string name="nexus_webhook_url">Webhook URL</string>
     <string name="nexus_notify_sms">短信 Webhook</string>

@@ -113,6 +113,7 @@ class NexusSettingsActivity : SimpleActivity() {
         }
         binding.nexusPickSttHolder.setOnClickListener { launchPick(PickTarget.STT) }
         binding.nexusPickTtsHolder.setOnClickListener { launchPick(PickTarget.TTS) }
+        binding.nexusTtsSpeakerHolder.setOnClickListener { pickSpeakerId() }
     }
 
     private fun launchPick(target: PickTarget) {
@@ -173,7 +174,6 @@ class NexusSettingsActivity : SimpleActivity() {
             binding.nexusLlmBaseUrl,
             binding.nexusLlmMaxMsgs,
             binding.nexusLlmPrompt,
-            binding.nexusTtsSpeaker,
             binding.nexusWebhookUrl,
         ).forEach { it.onFocusChangeListener = focusSaver }
 
@@ -212,7 +212,8 @@ class NexusSettingsActivity : SimpleActivity() {
         setTextIfChanged(binding.nexusLlmBaseUrl, cfg.llm.baseUrl)
         setTextIfChanged(binding.nexusLlmMaxMsgs, cfg.llm.maxMsgs.toString())
         setTextIfChanged(binding.nexusLlmPrompt, cfg.llm.systemPrompt)
-        setTextIfChanged(binding.nexusTtsSpeaker, cfg.ttsSpeakerId.toString())
+        binding.nexusTtsSpeakerValue.text =
+            getString(R.string.nexus_tts_speaker_value, cfg.ttsSpeakerId.coerceIn(0, 10))
         binding.nexusNotifyEnabled.isChecked = cfg.notify.enabled
         setTextIfChanged(binding.nexusWebhookUrl, cfg.notify.webhookUrl)
         binding.nexusNotifySms.isChecked = cfg.notify.smsEnabled
@@ -270,12 +271,10 @@ class NexusSettingsActivity : SimpleActivity() {
     private fun saveEditable(showToast: Boolean) {
         if (bindingUi) return
         val maxMsgs = binding.nexusLlmMaxMsgs.text.toString().trim().toIntOrNull() ?: 8
-        val speakerId = binding.nexusTtsSpeaker.text.toString().trim().toIntOrNull() ?: 0
         if (maxMsgs < 2) return
         val cur = repo.load()
         repo.save(
             cur.copy(
-                ttsSpeakerId = speakerId.coerceAtLeast(0),
                 greetingEnabled = binding.nexusGreetingEnabled.isChecked,
                 greetingText =
                     binding.nexusGreetingText.text.toString().trim().ifBlank { DEFAULT_GREETING_TEXT },
@@ -347,6 +346,16 @@ class NexusSettingsActivity : SimpleActivity() {
         value.text = SimCatalog.policyLabel(sim.policy)
         row.setOnClickListener { pickPolicy(sim) }
         return row
+    }
+
+    private fun pickSpeakerId() {
+        val current = repo.load().ttsSpeakerId.coerceIn(0, 10)
+        val items = ArrayList<RadioItem>((0..10).map { RadioItem(it, it.toString()) })
+        RadioGroupDialog(this, items, current) { picked ->
+            val sid = (picked as Int).coerceIn(0, 10)
+            repo.save(repo.load().copy(ttsSpeakerId = sid))
+            binding.nexusTtsSpeakerValue.text = getString(R.string.nexus_tts_speaker_value, sid)
+        }
     }
 
     private fun pickPolicy(sim: SimConfig) {

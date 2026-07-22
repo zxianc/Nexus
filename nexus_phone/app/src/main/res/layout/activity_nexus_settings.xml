@@ -176,23 +176,31 @@
                     app:layout_constraintTop_toTopOf="parent" />
             </androidx.constraintlayout.widget.ConstraintLayout>
 
-            <org.fossify.commons.views.MyTextView
+            <androidx.constraintlayout.widget.ConstraintLayout
+                android:id="@+id/nexus_tts_speaker_holder"
+                style="@style/SettingsHolderTextViewStyle"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:paddingStart="@dimen/activity_margin"
-                android:paddingEnd="@dimen/activity_margin"
-                android:text="@string/nexus_tts_speaker"
-                android:textSize="@dimen/small_text_size" />
+                android:layout_height="wrap_content">
 
-            <org.fossify.commons.views.MyEditText
-                android:id="@+id/nexus_tts_speaker"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="@dimen/activity_margin"
-                android:layout_marginEnd="@dimen/activity_margin"
-                android:layout_marginBottom="@dimen/medium_margin"
-                android:inputType="number"
-                android:maxLines="1" />
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/nexus_tts_speaker_label"
+                    style="@style/SettingsTextLabelStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:text="@string/nexus_tts_speaker"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toTopOf="parent" />
+
+                <org.fossify.commons.views.MyTextView
+                    android:id="@+id/nexus_tts_speaker_value"
+                    style="@style/SettingsTextValueStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    app:layout_constraintEnd_toEndOf="parent"
+                    app:layout_constraintStart_toStartOf="parent"
+                    app:layout_constraintTop_toBottomOf="@+id/nexus_tts_speaker_label" />
+            </androidx.constraintlayout.widget.ConstraintLayout>
 
             <TextView
                 android:id="@+id/nexus_section_llm"

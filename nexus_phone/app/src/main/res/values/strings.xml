@@ -36,6 +36,8 @@
     <string name="nexus_llm_max_msgs">max_msgs</string>
     <string name="nexus_llm_prompt">System prompt</string>
     <string name="nexus_tts_speaker">TTS speaker ID</string>
+    <string name="nexus_tts_speaker_hint">Usually 0–4 for vits-zh-ll</string>
+    <string name="nexus_tts_speaker_value">%1$d · usually 0–4</string>
     <string name="nexus_notify_enabled">Enable webhook notifications</string>
     <string name="nexus_webhook_url">Webhook URL</string>
     <string name="nexus_notify_sms">SMS webhook</string>
