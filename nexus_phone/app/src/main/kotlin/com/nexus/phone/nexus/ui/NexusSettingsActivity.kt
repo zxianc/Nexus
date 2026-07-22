@@ -1,12 +1,17 @@
 package com.nexus.phone.nexus.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.EditText
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.nexus.phone.R
 import com.nexus.phone.activities.SimpleActivity
 import com.nexus.phone.databinding.ActivityNexusSettingsBinding
+import com.nexus.phone.nexus.ai.ModelFileImport
+import com.nexus.phone.nexus.ai.ModelPaths
 import com.nexus.phone.nexus.archive.CallFinalizer
 import com.nexus.phone.nexus.config.ConfigRepository
 import com.nexus.phone.nexus.config.DEFAULT_GREETING_TEXT
@@ -28,12 +33,21 @@ import org.fossify.commons.extensions.viewBinding
 import org.fossify.commons.helpers.NavigationIcon
 import org.fossify.commons.models.RadioItem
 import org.fossify.commons.views.MyTextView
+import kotlin.concurrent.thread
 
 /** Nexus AI / notify / SIM settings — Fossify settings UI. */
 class NexusSettingsActivity : SimpleActivity() {
     private val binding by viewBinding(ActivityNexusSettingsBinding::inflate)
     private lateinit var repo: ConfigRepository
     private var bindingUi = false
+    private var pickTarget = PickTarget.STT
+
+    private enum class PickTarget { STT, TTS }
+
+    private val pickModel =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) onModelPicked(uri)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -67,6 +81,7 @@ class NexusSettingsActivity : SimpleActivity() {
             binding.nexusSectionPolicy,
             binding.nexusSectionSims,
             binding.nexusSectionGreeting,
+            binding.nexusSectionModels,
             binding.nexusSectionLlm,
             binding.nexusSectionNotify,
         ).forEach { it.setTextColor(getProperPrimaryColor()) }
@@ -90,14 +105,69 @@ class NexusSettingsActivity : SimpleActivity() {
         binding.nexusTakeover.setOnClickListener {
             toggleTakeover(binding.nexusTakeover.isChecked)
         }
-        binding.nexusDefaultDialerHolder.setOnClickListener {
-            DialerTakeover.requestRoleUi(this)?.let { startActivity(it) }
-                ?: toast(R.string.nexus_cannot_open)
+        binding.nexusStatus.setOnClickListener {
+            if (!DialerTakeover.isDefaultDialer(this)) {
+                DialerTakeover.requestRoleUi(this)?.let { startActivity(it) }
+                    ?: toast(R.string.nexus_cannot_open)
+            }
         }
-        binding.nexusRefreshSimsHolder.setOnClickListener {
-            bind(repo.refreshSimMetadata())
-            applyThemeColors()
-            toast(R.string.nexus_sims_refreshed)
+        binding.nexusPickSttHolder.setOnClickListener { launchPick(PickTarget.STT) }
+        binding.nexusPickTtsHolder.setOnClickListener { launchPick(PickTarget.TTS) }
+        binding.nexusResetSttHolder.setOnClickListener {
+            repo.save(repo.load().copy(sttModelPath = null))
+            refreshModelStatus()
+            toast(R.string.nexus_stt_reset)
+        }
+        binding.nexusResetTtsHolder.setOnClickListener {
+            repo.save(repo.load().copy(ttsModelPath = null))
+            refreshModelStatus()
+            toast(R.string.nexus_tts_reset)
+        }
+    }
+
+    private fun launchPick(target: PickTarget) {
+        pickTarget = target
+        pickModel.launch(arrayOf("application/octet-stream", "*/*"))
+    }
+
+    private fun onModelPicked(uri: Uri) {
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {
+        }
+        toast(R.string.nexus_model_importing)
+        val target = pickTarget
+        thread(name = "ModelImport") {
+            val result =
+                when (target) {
+                    PickTarget.STT -> ModelFileImport.importStt(this, uri)
+                    PickTarget.TTS -> ModelFileImport.importTts(this, uri)
+                }
+            runOnUiThread {
+                result.fold(
+                    onSuccess = { imported ->
+                        val cfg = repo.load()
+                        when (target) {
+                            PickTarget.STT ->
+                                repo.save(cfg.copy(sttModelPath = imported.modelFile.absolutePath))
+                            PickTarget.TTS ->
+                                repo.save(cfg.copy(ttsModelPath = imported.modelFile.absolutePath))
+                        }
+                        refreshModelStatus()
+                        val extra =
+                            if (imported.copiedSidecars.isEmpty()) {
+                                ""
+                            } else {
+                                "；已带：${imported.copiedSidecars.joinToString()}"
+                            }
+                        toast(getString(R.string.nexus_model_import_ok, extra))
+                    },
+                    onFailure = {
+                        toast(getString(R.string.nexus_model_import_fail, it.message ?: ""))
+                        refreshModelStatus()
+                    },
+                )
+            }
         }
     }
 
@@ -117,36 +187,32 @@ class NexusSettingsActivity : SimpleActivity() {
             binding.nexusWebhookUrl,
         ).forEach { it.onFocusChangeListener = focusSaver }
 
-        fun switchSaver(block: () -> Unit) {
+        fun switchSaver() {
             if (bindingUi) return
-            block()
             saveEditable(showToast = false)
         }
-        binding.nexusGreetingEnabled.setOnClickListener {
-            switchSaver { }
-        }
+        binding.nexusGreetingEnabled.setOnClickListener { switchSaver() }
         binding.nexusGreetingHolder.setOnClickListener {
             binding.nexusGreetingEnabled.toggle()
-            switchSaver { }
+            switchSaver()
         }
-        binding.nexusLlmEnabled.setOnClickListener { switchSaver { } }
+        binding.nexusLlmEnabled.setOnClickListener { switchSaver() }
         binding.nexusLlmHolder.setOnClickListener {
             binding.nexusLlmEnabled.toggle()
-            switchSaver { }
+            switchSaver()
         }
-        binding.nexusNotifyEnabled.setOnClickListener { switchSaver { } }
+        binding.nexusNotifyEnabled.setOnClickListener { switchSaver() }
         binding.nexusNotifyHolder.setOnClickListener {
             binding.nexusNotifyEnabled.toggle()
-            switchSaver { }
+            switchSaver()
         }
-        binding.nexusNotifySms.setOnClickListener { switchSaver { } }
-        binding.nexusNotifyCall.setOnClickListener { switchSaver { } }
+        binding.nexusNotifySms.setOnClickListener { switchSaver() }
+        binding.nexusNotifyCall.setOnClickListener { switchSaver() }
     }
 
     private fun bind(cfg: NexusConfig) {
         bindingUi = true
-        binding.nexusStatus.text = DialerTakeover.probe(this).message +
-            "\n" + getString(R.string.nexus_sims_detected, cfg.sims.size)
+        updateStatus(cfg)
         binding.nexusTakeover.isChecked = cfg.dialerTakeover
         binding.nexusGreetingEnabled.isChecked = cfg.greetingEnabled
         setTextIfChanged(binding.nexusGreetingText, cfg.greetingText.ifBlank { DEFAULT_GREETING_TEXT })
@@ -164,7 +230,45 @@ class NexusSettingsActivity : SimpleActivity() {
         binding.nexusArchivePath.text =
             getString(R.string.nexus_archive_path, CallFinalizer.archiveRoot(this).absolutePath)
         rebuildSims(cfg)
+        refreshModelStatus()
         bindingUi = false
+    }
+
+    private fun updateStatus(cfg: NexusConfig) {
+        val probe = DialerTakeover.probe(this)
+        binding.nexusStatus.text =
+            buildString {
+                append(probe.message)
+                append('\n')
+                append(getString(R.string.nexus_sims_detected, cfg.sims.size))
+                if (!probe.isDefaultDialer) {
+                    append('\n')
+                    append(getString(R.string.nexus_tap_set_default))
+                }
+            }
+    }
+
+    private fun refreshModelStatus() {
+        val layout = ModelPaths.resolve(this)
+        binding.nexusModelStatus.text =
+            buildString {
+                appendLine(
+                    getString(
+                        if (layout.asrReady()) R.string.nexus_model_stt_ready else R.string.nexus_model_stt_missing,
+                    ),
+                )
+                appendLine(layout.asrModel.absolutePath)
+                appendLine(
+                    getString(
+                        if (layout.ttsReady()) R.string.nexus_model_tts_ready else R.string.nexus_model_tts_missing,
+                    ),
+                )
+                append(layout.ttsModel.absolutePath)
+                val miss = layout.missing()
+                if (miss.isNotEmpty()) {
+                    append("\n缺失 ${miss.size} 个文件")
+                }
+            }
     }
 
     private fun setTextIfChanged(edit: EditText, value: String) {
@@ -219,7 +323,7 @@ class NexusSettingsActivity : SimpleActivity() {
                 if (enable) DialerTakeover.requestRoleUi(this)?.let { startActivity(it) }
             },
         )
-        binding.nexusStatus.text = DialerTakeover.probe(this).message
+        updateStatus(repo.load())
     }
 
     private fun rebuildSims(cfg: NexusConfig) {
