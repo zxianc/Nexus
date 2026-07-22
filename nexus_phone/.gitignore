@@ -15,3 +15,7 @@ fastlane/report.xml
 # Local release drops
 dist/
 
+
+# Local release drops
+dist/
+
