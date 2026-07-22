@@ -206,6 +206,15 @@
             </intent-filter>
         </receiver>
 
+        <receiver
+            android:name=".nexus.notify.SmsReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter android:priority="999">
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".services.SimpleCallScreeningService"
             android:exported="true"
