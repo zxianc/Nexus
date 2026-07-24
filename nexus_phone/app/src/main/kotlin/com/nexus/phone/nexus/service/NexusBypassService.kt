@@ -251,12 +251,18 @@ class NexusBypassService : Service() {
         val speed =
             cfg.ttsSpeed.coerceIn(ConfigRepository.TTS_SPEED_MIN, ConfigRepository.TTS_SPEED_MAX)
         val existing = tts
-        if (existing == null || existing.speed != speed) {
+        val needReload =
+            existing == null ||
+                existing.speed != speed ||
+                existing.speakerId != sid ||
+                existing.modelPath != layout.ttsModel.absolutePath
+        if (needReload) {
             try {
                 existing?.close()
             } catch (_: Exception) {
             }
             tts = SherpaTts(layout, speakerId = sid, speed = speed)
+            Log.i(TAG, "TTS engine ready speaker=$sid speed=$speed model=${layout.ttsModel.name}")
         }
         if (callLlm == null) {
             val llmCfg = cfg.llm
@@ -372,21 +378,22 @@ class NexusBypassService : Service() {
 
     private fun injectTts(c: PcmSocketClient, samples: FloatArray, sampleRate: Int) {
         // HAL pcmC0D23p incall-music is mono s16 @48k (matches Go tx_inject).
+        val outRate = if (injectRate > 0) injectRate else PcmFormat.CALL_UL_RATE
         val pcm =
             PcmFormat.floatMonoToMonoS16(
                 samples,
                 sampleRate,
-                injectRate,
-                gain = 4.0f, // same boost as daemon gainS16Mono
+                outRate,
+                gain = PcmFormat.CALL_TTS_GAIN,
             )
         if (pcm.isEmpty()) {
-            Log.i(TAG, "TTS injected bytes=0 rateIn=$sampleRate rateOut=$injectRate ch=1")
+            Log.i(TAG, "TTS injected bytes=0 rateIn=$sampleRate rateOut=$outRate ch=1")
             return
         }
         beginTtsGuard()
         try {
             // Send in ~20ms chunks; HAL drains at realtime.
-            val bytesPerMs = injectRate * 1 /*mono*/ * 2 /*s16*/ / 1000
+            val bytesPerMs = outRate * 1 /*mono*/ * 2 /*s16*/ / 1000
             val chunk = (bytesPerMs * 20).coerceAtLeast(2)
             var off = 0
             while (off < pcm.size && sessionWanted && client === c) {
@@ -398,7 +405,7 @@ class NexusBypassService : Service() {
             }
             Log.i(
                 TAG,
-                "TTS injected bytes=$off rateIn=$sampleRate rateOut=$injectRate ch=1",
+                "TTS injected bytes=$off rateIn=$sampleRate rateOut=$outRate ch=1",
             )
         } finally {
             endTtsGuard()

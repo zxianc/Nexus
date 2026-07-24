@@ -5,6 +5,12 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 object PcmFormat {
+    /** HAL incall-music TX: mono s16 @48k (matches Go tx_inject / NexusBypassService). */
+    const val CALL_UL_RATE = 48000
+
+    /** Same boost as daemon gainS16Mono / injectTts. */
+    const val CALL_TTS_GAIN = 4.0f
+
     fun shortsToFloat(samples: ShortArray): FloatArray {
         val out = FloatArray(samples.size)
         for (i in samples.indices) {
@@ -26,6 +32,10 @@ object PcmFormat {
         }
         return out
     }
+
+    /** Preview / inject: same resample + gain as call UL. */
+    fun floatMonoToCallUlS16(samples: FloatArray, inRate: Int): ByteArray =
+        floatMonoToMonoS16(samples, inRate, CALL_UL_RATE, CALL_TTS_GAIN)
 
     /**
      * Resample mono float → mono s16le at [outRate].

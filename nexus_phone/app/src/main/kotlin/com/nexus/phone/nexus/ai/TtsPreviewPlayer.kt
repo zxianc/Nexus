@@ -67,13 +67,14 @@ class TtsPreviewPlayer {
                     onResult("synth")
                     return@thread
                 }
-                val pcm = PcmFormat.floatMonoToS16le(audio.samples)
+                // Same resample + gain as call UL inject, so preview matches call timbre.
+                val pcm = PcmFormat.floatMonoToCallUlS16(audio.samples, audio.sampleRate)
                 synchronized(lock) {
                     if (gen != generation) {
                         onResult("cancelled")
                         return@thread
                     }
-                    startTrackLocked(pcm, audio.sampleRate)
+                    startTrackLocked(pcm, PcmFormat.CALL_UL_RATE)
                 }
                 onResult(null)
             } catch (e: Exception) {

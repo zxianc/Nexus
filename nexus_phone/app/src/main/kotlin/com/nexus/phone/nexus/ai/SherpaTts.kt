@@ -22,7 +22,7 @@ data class TtsAudio(
  */
 class SherpaTts(
     private val layout: ModelLayout,
-    private val speakerId: Int = 0,
+    val speakerId: Int = 0,
     val speed: Float = 1.0f,
     private val threads: Int = 2,
 ) : AutoCloseable {
@@ -31,6 +31,9 @@ class SherpaTts(
     private val ready = AtomicBoolean(false)
     private val clampedSpeed =
         speed.coerceIn(ConfigRepository.TTS_SPEED_MIN, ConfigRepository.TTS_SPEED_MAX)
+
+    val modelPath: String
+        get() = layout.ttsModel.absolutePath
 
     fun ensureLoaded(): Boolean {
         if (ready.get()) return true
@@ -89,6 +92,11 @@ class SherpaTts(
         synchronized(lock) {
             return try {
                 // lengthScale already encodes rate; keep generate speed at 1.0
+                Log.i(
+                    TAG,
+                    "synthesize sid=$sid speed=$clampedSpeed model=${layout.ttsModel.name} " +
+                        "chars=${trimmed.length}",
+                )
                 val audio = engine.generate(trimmed, sid, 1.0f)
                 TtsAudio(audio.samples, audio.sampleRate)
             } catch (e: Exception) {
