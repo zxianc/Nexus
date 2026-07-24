@@ -18,7 +18,7 @@ class EnergyVad(
         val speechRms: Double = 400.0,
         val silenceRms: Double = 250.0,
         val minSpeechMs: Int = 500,
-        val silenceEndMs: Int = 500,
+        val silenceEndMs: Int = 300,
         val maxSpeechMs: Int = 8000,
         val preRollMs: Int = 200,
     )

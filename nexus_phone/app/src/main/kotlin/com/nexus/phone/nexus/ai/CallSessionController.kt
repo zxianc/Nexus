@@ -13,6 +13,10 @@ class CallSessionController(
 ) {
     private val session = CallSession(llm.maxMsgs)
 
+    /** Fired once per utterance on first SSE content delta (for latency timing). */
+    @Volatile
+    var onLlmFirstDelta: (() -> Unit)? = null
+
     fun reset() {
         session.reset()
     }
@@ -39,11 +43,15 @@ class CallSessionController(
         return try {
             val msgs = session.messages(llm.systemPrompt)
             val full =
-                c.chatStream(msgs) { sentence ->
-                    if (session.generation == gen) {
-                        onAssistantSentence(sentence)
-                    }
-                }
+                c.chatStream(
+                    msgs,
+                    onSentence = { sentence ->
+                        if (session.generation == gen) {
+                            onAssistantSentence(sentence)
+                        }
+                    },
+                    onFirstDelta = { onLlmFirstDelta?.invoke() },
+                )
             if (full.isNotBlank()) {
                 session.appendAssistantGen(gen, full)
             }

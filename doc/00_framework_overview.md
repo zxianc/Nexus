@@ -76,6 +76,8 @@ STT/TTS 默认 `files/models/sense-voice` 与 `vits-zh-hf-fanchen-C`（旧包 `v
 
 **已删除：** 旧 App `nexus_app` / `com.nexus.assistant`（能力已迁入 `nexus_phone`；历史提案见上方归档）。
 
+通话旁路延迟排查：logcat tag **`NexusPipeline`**（一轮 ASR→LLM→TTS 各阶段 ms）。
+
 
 
 ---

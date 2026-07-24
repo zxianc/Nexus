@@ -14,6 +14,7 @@ import com.nexus.phone.nexus.ai.CallSessionController
 import com.nexus.phone.nexus.ai.DeepSeekClient
 import com.nexus.phone.nexus.ai.ModelPaths
 import com.nexus.phone.nexus.ai.NetworkBinder
+import com.nexus.phone.nexus.ai.PipelineTiming
 import com.nexus.phone.nexus.ai.SentenceBuf
 import com.nexus.phone.nexus.ai.SherpaAsr
 import com.nexus.phone.nexus.ai.SherpaTts
@@ -29,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
- * FGS session: UDS PCM + VAD → ASR → DeepSeek → TTS → PCM_UL.
+ * FGS session: UDS PCM + VAD → ASR → DeepSeek → TTS queue → PCM_UL.
  */
 class NexusBypassService : Service() {
     @Volatile
@@ -47,6 +48,7 @@ class NexusBypassService : Service() {
     private var asr: SherpaAsr? = null
     private var tts: SherpaTts? = null
     private var callLlm: CallSessionController? = null
+    private var speakQueue: TtsSpeakQueue? = null
     private val aiBusy = AtomicBoolean(false)
     /** While TTS is on UL (and shortly after), ignore DL utterances — echo would re-trigger LLM. */
     @Volatile
@@ -185,7 +187,7 @@ class NexusBypassService : Service() {
             c.setReadTimeoutMs(200)
             ensureAiLoaded()
             bridge.onStreaming(hdr)
-            maybePlayGreeting(c)
+            maybePlayGreeting()
 
             var lastLogAt = 0L
             while (sessionWanted && client === c) {
@@ -264,20 +266,13 @@ class NexusBypassService : Service() {
             tts = SherpaTts(layout, speakerId = sid, speed = speed)
             Log.i(TAG, "TTS engine ready speaker=$sid speed=$speed model=${layout.ttsModel.name}")
         }
+        ensureSpeakQueue()
         if (callLlm == null) {
             val llmCfg = cfg.llm
             val ds = DeepSeekClient.fromConfig(llmCfg)
             callLlm =
                 CallSessionController(llmCfg, ds) { sentence ->
-                    val c = client ?: return@CallSessionController
-                    try {
-                        val audio =
-                            tts?.synthesize(sentence, sid = currentTtsSpeakerId())
-                                ?: return@CallSessionController
-                        injectTts(c, audio.samples, audio.sampleRate)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "sentence TTS", e)
-                    }
+                    speakQueue?.offer(sentence)
                 }
             Log.i(TAG, "LLM ready=${callLlm?.ready()} model=${llmCfg.model}")
         }
@@ -288,22 +283,36 @@ class NexusBypassService : Service() {
         }
     }
 
+    private fun ensureSpeakQueue() {
+        if (speakQueue != null) return
+        speakQueue =
+            TtsSpeakQueue(
+                speak = { text ->
+                    val t0 = System.currentTimeMillis()
+                    val audio =
+                        tts?.synthesize(text, sid = currentTtsSpeakerId())
+                            ?: return@TtsSpeakQueue
+                    val c = client ?: return@TtsSpeakQueue
+                    injectTts(c, audio.samples, audio.sampleRate)
+                    Log.i(
+                        TAG,
+                        "tts_sentence ms=${System.currentTimeMillis() - t0} chars=${text.length}",
+                    )
+                },
+                onError = { e -> Log.e(TAG, "speak queue", e) },
+            ).also { it.start() }
+    }
+
     private fun currentTtsSpeakerId(): Int =
         ConfigRepository(this).load().ttsSpeakerId.coerceAtLeast(0)
 
-    private fun maybePlayGreeting(c: PcmSocketClient) {
+    private fun maybePlayGreeting() {
         val cfg = ConfigRepository(this).load()
         if (!cfg.greetingEnabled) return
         val text = cfg.greetingText.trim()
         if (text.isEmpty()) return
-        aiExecutor.execute {
-            try {
-                val audio = tts?.synthesize(text, sid = currentTtsSpeakerId()) ?: return@execute
-                injectTts(c, audio.samples, audio.sampleRate)
-            } catch (e: Exception) {
-                Log.e(TAG, "greeting TTS", e)
-            }
-        }
+        ensureSpeakQueue()
+        speakQueue?.offer(text)
     }
 
     private fun enqueueUtterance(u: Utterance) {
@@ -317,9 +326,12 @@ class NexusBypassService : Service() {
             return
         }
         aiExecutor.execute {
+            val timing = PipelineTiming()
+            timing.mark("vad_emit")
             try {
                 if (isListenSuppressed() || !sessionWanted) return@execute
                 val text = asr?.transcribe(u.pcm16k).orEmpty().trim()
+                timing.mark("asr_done")
                 Log.i(TAG, "ASR text='$text'")
                 if (!SentenceBuf.hasSpeechRune(text) || !sessionWanted || isListenSuppressed()) {
                     if (text.isNotEmpty()) Log.i(TAG, "drop non-speech ASR")
@@ -329,7 +341,14 @@ class NexusBypassService : Service() {
                 NetworkBinder.bindBestInternet(this@NexusBypassService)
                 val llm = callLlm
                 if (llm != null && llm.ready()) {
+                    llm.onLlmFirstDelta = { timing.mark("llm_first") }
                     val full = llm.onUserUtterance(text)
+                    timing.mark("llm_done")
+                    val idle = speakQueue?.awaitIdle(120_000L) == true
+                    timing.mark("tts_idle")
+                    timing.summary(
+                        "asrChars=${text.length} replyChars=${full.length} idleOk=$idle",
+                    )
                     if (full.isBlank()) {
                         Log.w(TAG, "LLM empty reply; ASR='$text'")
                         fallbackListenRetry()
@@ -342,6 +361,7 @@ class NexusBypassService : Service() {
                 Log.e(TAG, "utterance AI", e)
                 fallbackListenRetry()
             } finally {
+                callLlm?.onLlmFirstDelta = null
                 aiBusy.set(false)
             }
         }
@@ -349,10 +369,9 @@ class NexusBypassService : Service() {
 
     /** Do not parrot the caller — that sounded like a broken echo. */
     private fun fallbackListenRetry() {
-        val c = client ?: return
-        val audio =
-            tts?.synthesize("信号不太好，请再说一遍。", sid = currentTtsSpeakerId()) ?: return
-        injectTts(c, audio.samples, audio.sampleRate)
+        ensureSpeakQueue()
+        speakQueue?.offer("信号不太好，请再说一遍。")
+        speakQueue?.awaitIdle(30_000L)
     }
 
     private fun isListenSuppressed(): Boolean =
@@ -413,6 +432,11 @@ class NexusBypassService : Service() {
     }
 
     private fun releaseAi() {
+        try {
+            speakQueue?.shutdown()
+        } catch (_: Exception) {
+        }
+        speakQueue = null
         try {
             asr?.close()
         } catch (_: Exception) {

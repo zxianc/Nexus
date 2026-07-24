@@ -27,6 +27,7 @@ class DeepSeekClient(
     fun chatStream(
         messages: List<ChatMessage>,
         onSentence: (String) -> Unit,
+        onFirstDelta: (() -> Unit)? = null,
     ): String {
         val key = apiKey.trim()
         if (key.isEmpty()) {
@@ -80,12 +81,17 @@ class DeepSeekClient(
 
             val full = StringBuilder()
             val sentences = SentenceBuf(onSentence)
+            var first = true
             BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8)).use { reader ->
                 while (true) {
                     val line = reader.readLine() ?: break
                     if (!line.startsWith("data:")) continue
                     val payload = line.removePrefix("data:").trim()
                     val delta = DeepSeekSse.extractDeltaContent(payload) ?: continue
+                    if (first) {
+                        first = false
+                        onFirstDelta?.invoke()
+                    }
                     full.append(delta)
                     // Emit ASAP on sentence / clause boundaries → TTS without waiting for full reply.
                     sentences.push(delta)
