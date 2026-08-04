@@ -1,6 +1,8 @@
 package com.nexus.phone.nexus.ai
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SentenceBufTest {
@@ -37,5 +39,21 @@ class SentenceBufTest {
         buf.push("。。。")
         buf.flush()
         assertEquals(emptyList<String>(), out)
+    }
+
+    @Test
+    fun rejectsLatinNoiseLikeSenseVoiceFalsePositive() {
+        assertFalse(SentenceBuf.hasSpeechRune("A."))
+        assertFalse(SentenceBuf.hasSpeechRune("A"))
+        assertFalse(SentenceBuf.hasSpeechRune("ok"))
+        assertFalse(SentenceBuf.hasSpeechRune("123"))
+        assertFalse(SentenceBuf.hasSpeechRune(""))
+    }
+
+    @Test
+    fun acceptsChineseSpeech() {
+        assertTrue(SentenceBuf.hasSpeechRune("你好"))
+        assertTrue(SentenceBuf.hasSpeechRune("放门口"))
+        assertTrue(SentenceBuf.hasSpeechRune("嗯。"))
     }
 }

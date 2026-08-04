@@ -76,6 +76,11 @@ data class NexusConfig(
     /** Play a fixed TTS greeting right after AI answer. */
     @SerializedName("greeting_enabled") val greetingEnabled: Boolean = false,
     @SerializedName("greeting_text") val greetingText: String = DEFAULT_GREETING_TEXT,
+    /**
+     * Delay after RINGING before AI auto-answer (ms). Used to prewarm ASR/TTS.
+     * Clamped to 1000–5000; default 3000.
+     */
+    @SerializedName("ai_answer_delay_ms") val aiAnswerDelayMs: Int = 3000,
     /** Legacy shared root (optional fallback when stt/tts paths unset). */
     @SerializedName("model_dir") val modelDir: String? = null,
     @SerializedName("archive_saf_uri") val archiveSafUri: String? = null,
@@ -117,6 +122,11 @@ data class NexusConfig(
                 sims = sims,
                 dialerTakeover = if (hasTakeoverKey) parsed.dialerTakeover else true,
                 greetingText = parsed.greetingText ?: DEFAULT_GREETING_TEXT,
+                aiAnswerDelayMs =
+                    when {
+                        parsed.aiAnswerDelayMs <= 0 -> 3000
+                        else -> parsed.aiAnswerDelayMs.coerceIn(1000, 5000)
+                    },
                 llm =
                     (parsed.llm ?: LlmConfig()).let { llm ->
                         llm.copy(

@@ -16,6 +16,7 @@ import com.nexus.phone.helpers.CallManager
 import com.nexus.phone.helpers.CallNotificationManager
 import com.nexus.phone.helpers.NoCall
 import com.nexus.phone.models.Events
+import com.nexus.phone.nexus.config.ConfigRepository
 import com.nexus.phone.nexus.policy.CallPolicyBindings
 import com.nexus.phone.nexus.policy.PolicyAction
 import com.nexus.phone.nexus.service.BypassCommands
@@ -42,6 +43,7 @@ class CallService : InCallService() {
                         callNotificationManager.setupNotification()
                     }
                     Call.STATE_DISCONNECTED, Call.STATE_DISCONNECTING -> {
+                        CallPolicyBindings.cancelScheduledAnswer()
                         CallPolicyBindings.controller(this@CallService).onDisconnected()
                         BypassCommands.endSession(this@CallService)
                         callNotificationManager.cancelNotification()
@@ -77,9 +79,11 @@ class CallService : InCallService() {
                     return
                 }
                 decision.actions.contains(PolicyAction.AnswerAi) -> {
-                    Log.i(TAG, "policy AI — skip ringing UI, answer")
+                    Log.i(TAG, "policy AI — prewarm then delayed answer")
                     callNotificationManager.setupNotification(true)
-                    CallPolicyBindings.answerWithRetry(call)
+                    val delayMs = ConfigRepository(this).load().aiAnswerDelayMs
+                    BypassCommands.warmAi(this)
+                    CallPolicyBindings.scheduleAnswerAi(call, delayMs)
                     return
                 }
                 else -> {
@@ -119,6 +123,7 @@ class CallService : InCallService() {
         if (CallManager.getPhoneState() == NoCall) {
             CallManager.inCallService = null
             callNotificationManager.cancelNotification()
+            CallPolicyBindings.cancelScheduledAnswer()
             CallPolicyBindings.controller(this).onDisconnected()
         } else {
             callNotificationManager.setupNotification()

@@ -8,9 +8,19 @@ import android.content.Intent
  */
 object BypassCommands {
     private const val CLS = "com.nexus.phone.nexus.service.NexusBypassService"
+    private const val ACTION_WARM = "com.nexus.phone.nexus.action.WARM_AI"
     private const val ACTION_START = "com.nexus.phone.nexus.action.START_SESSION"
     private const val ACTION_END = "com.nexus.phone.nexus.action.END_SESSION"
     private const val ACTION_HUMAN = "com.nexus.phone.nexus.action.HUMAN_MODE"
+
+    /** Preload ASR/TTS during RINGING; does not open PCM/UDS. */
+    fun warmAi(context: Context) {
+        val i =
+            Intent()
+                .setClassName(context, CLS)
+                .setAction(ACTION_WARM)
+        context.startForegroundService(i)
+    }
 
     fun startSession(context: Context) {
         val i =

@@ -23,6 +23,11 @@ class CallSessionController(
 
     fun ready(): Boolean = client != null && llm.enabled && llm.apiKey.isNotBlank()
 
+    /** Ring-phase network warm so first onUserUtterance is not a cold HTTPS. */
+    fun prewarm() {
+        client?.prewarm()
+    }
+
     fun transcriptLines(): List<String> = session.transcriptLines()
 
     fun snapshot(): List<ChatMessage> = session.snapshot()

@@ -23,8 +23,11 @@ class AiAnswerReceiver : BroadcastReceiver() {
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
         if (state != TelephonyManager.EXTRA_STATE_RINGING) {
             if (state == TelephonyManager.EXTRA_STATE_IDLE) {
+                val wasAnswering = answering
                 answering = false
-                if (DialerTakeover.isEnabled(context) && CallStore.archivePending) {
+                cancelPendingAccept()
+                // Clean up WARM FGS if we prewarmed but never reached / left a session.
+                if (wasAnswering || (DialerTakeover.isEnabled(context) && CallStore.archivePending)) {
                     BypassCommands.endSession(context.applicationContext)
                 }
             }
@@ -46,7 +49,7 @@ class AiAnswerReceiver : BroadcastReceiver() {
                 CallStore.aiMode = true
                 CallStore.wasAiMode = true
                 CallStore.noteRinging(slot, "", policy.toWire())
-                answerAndStart(context)
+                scheduleAnswerAndStart(context)
             }
             SimPolicy.REJECT -> {
                 try {
@@ -60,6 +63,24 @@ class AiAnswerReceiver : BroadcastReceiver() {
             }
             SimPolicy.HUMAN -> Unit
         }
+    }
+
+    private fun scheduleAnswerAndStart(context: Context) {
+        val app = context.applicationContext
+        val delayMs =
+            ConfigRepository.clampAiAnswerDelayMs(
+                ConfigRepository(app).load().aiAnswerDelayMs,
+            )
+        BypassCommands.warmAi(app)
+        cancelPendingAccept()
+        Log.i(TAG, "scheduleAccept delayMs=$delayMs")
+        val task =
+            Runnable {
+                pendingAccept = null
+                answerAndStart(app)
+            }
+        pendingAccept = task
+        mainHandler.postDelayed(task, delayMs.toLong())
     }
 
     private fun answerAndStart(context: Context) {
@@ -97,8 +118,21 @@ class AiAnswerReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "AiAnswer"
+        private val mainHandler = Handler(Looper.getMainLooper())
 
         @Volatile
         private var answering = false
+
+        @Volatile
+        private var pendingAccept: Runnable? = null
+
+        private fun cancelPendingAccept() {
+            val task = pendingAccept
+            if (task != null) {
+                Log.i(TAG, "cancelPendingAccept")
+                mainHandler.removeCallbacks(task)
+                pendingAccept = null
+            }
+        }
     }
 }

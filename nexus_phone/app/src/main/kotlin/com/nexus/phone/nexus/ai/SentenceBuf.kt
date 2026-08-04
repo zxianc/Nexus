@@ -35,6 +35,12 @@ class SentenceBuf(
             }
 
         fun hasSpeechRune(s: String): Boolean =
-            s.any { it.isLetterOrDigit() }
+            // Chinese phone path: SenseVoice often emits Latin junk ("A.") on noise.
+            // Require at least one CJK ideograph before treating as user speech / TTS.
+            s.any { ch ->
+                ch in '\u4e00'..'\u9fff' ||
+                    ch in '\u3400'..'\u4dbf' ||
+                    ch in '\uf900'..'\ufaff'
+            }
     }
 }

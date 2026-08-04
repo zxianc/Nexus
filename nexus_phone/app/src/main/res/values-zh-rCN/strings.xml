@@ -29,6 +29,9 @@
     <string name="nexus_refresh_sims">刷新卡信息</string>
     <string name="nexus_greeting_enabled">启用开场白 TTS</string>
     <string name="nexus_greeting_text">开场白文案</string>
+    <string name="nexus_answer_delay">接听延迟（预热）</string>
+    <string name="nexus_answer_delay_value">%1$d 秒 · 响铃后再接</string>
+    <string name="nexus_answer_delay_hint">响铃后等待并预热 ASR/TTS（1～5 秒）</string>
     <string name="nexus_llm_enabled">启用 LLM</string>
     <string name="nexus_llm_model">模型名</string>
     <string name="nexus_llm_api_key">API Key</string>

@@ -129,6 +129,7 @@ class NexusSettingsActivity : SimpleActivity() {
         binding.nexusPickTtsHolder.setOnClickListener { launchPick(PickTarget.TTS) }
         binding.nexusTtsSpeakerHolder.setOnClickListener { pickSpeakerId() }
         binding.nexusTtsSpeedHolder.setOnClickListener { pickTtsSpeed() }
+        binding.nexusAnswerDelayHolder.setOnClickListener { pickAnswerDelay() }
     }
 
     private fun launchPick(target: PickTarget) {
@@ -233,6 +234,11 @@ class NexusSettingsActivity : SimpleActivity() {
             getString(
                 R.string.nexus_tts_speed_value,
                 cfg.ttsSpeed.coerceIn(ConfigRepository.TTS_SPEED_MIN, ConfigRepository.TTS_SPEED_MAX),
+            )
+        binding.nexusAnswerDelayValue.text =
+            getString(
+                R.string.nexus_answer_delay_value,
+                ConfigRepository.clampAiAnswerDelayMs(cfg.aiAnswerDelayMs) / 1000,
             )
         binding.nexusNotifyEnabled.isChecked = cfg.notify.enabled
         setTextIfChanged(binding.nexusWebhookUrl, cfg.notify.webhookUrl)
@@ -433,6 +439,32 @@ class NexusSettingsActivity : SimpleActivity() {
             .setNegativeButton(R.string.cancel, null)
             .apply {
                 setupDialogStuff(picker, this, R.string.nexus_tts_speed)
+            }
+    }
+
+    private fun pickAnswerDelay() {
+        val minSec = ConfigRepository.AI_ANSWER_DELAY_MS_MIN / 1000
+        val maxSec = ConfigRepository.AI_ANSWER_DELAY_MS_MAX / 1000
+        val currentSec =
+            (ConfigRepository.clampAiAnswerDelayMs(repo.load().aiAnswerDelayMs) / 1000)
+                .coerceIn(minSec, maxSec)
+        val picker = NumberPicker(this)
+        picker.minValue = minSec
+        picker.maxValue = maxSec
+        picker.value = currentSec
+        picker.wrapSelectorWheel = false
+        val pad = (16 * resources.displayMetrics.density).toInt()
+        picker.setPadding(pad, pad / 2, pad, pad / 2)
+        getAlertDialogBuilder()
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val sec = picker.value.coerceIn(minSec, maxSec)
+                val ms = ConfigRepository.clampAiAnswerDelayMs(sec * 1000)
+                repo.save(repo.load().copy(aiAnswerDelayMs = ms))
+                binding.nexusAnswerDelayValue.text = getString(R.string.nexus_answer_delay_value, sec)
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .apply {
+                setupDialogStuff(picker, this, R.string.nexus_answer_delay)
             }
     }
 

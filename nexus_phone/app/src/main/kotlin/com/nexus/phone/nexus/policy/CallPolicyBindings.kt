@@ -17,6 +17,9 @@ object CallPolicyBindings {
     private const val EXTRA_SORT_ORDER = "android.telecom.extra.SORT_ORDER"
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    @Volatile
+    private var pendingAnswer: Runnable? = null
+
     fun controller(context: Context): CallPolicyController {
         val app = context.applicationContext
         val repo = ConfigRepository(app)
@@ -55,6 +58,32 @@ object CallPolicyBindings {
         call.details?.handle?.schemeSpecificPart
             ?: call.details?.gatewayInfo?.originalAddress?.schemeSpecificPart
             ?: ""
+
+    /**
+     * Delay then answer while RINGING. Caller should [cancelScheduledAnswer] on disconnect.
+     * [delayMs] is clamped by [ConfigRepository.clampAiAnswerDelayMs].
+     */
+    fun scheduleAnswerAi(call: Call, delayMs: Int) {
+        cancelScheduledAnswer()
+        val ms = ConfigRepository.clampAiAnswerDelayMs(delayMs)
+        Log.i(TAG, "scheduleAnswerAi delayMs=$ms")
+        val task =
+            Runnable {
+                pendingAnswer = null
+                answerWithRetry(call)
+            }
+        pendingAnswer = task
+        mainHandler.postDelayed(task, ms.toLong())
+    }
+
+    fun cancelScheduledAnswer() {
+        val task = pendingAnswer
+        if (task != null) {
+            Log.i(TAG, "cancelScheduledAnswer")
+            mainHandler.removeCallbacks(task)
+            pendingAnswer = null
+        }
+    }
 
     fun answerWithRetry(call: Call) {
         val tryAnswer =

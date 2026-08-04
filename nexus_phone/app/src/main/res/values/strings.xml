@@ -29,6 +29,9 @@
     <string name="nexus_refresh_sims">Refresh SIM info</string>
     <string name="nexus_greeting_enabled">Play greeting TTS</string>
     <string name="nexus_greeting_text">Greeting text</string>
+    <string name="nexus_answer_delay">Answer delay (prewarm)</string>
+    <string name="nexus_answer_delay_value">%1$d s · rings then answers</string>
+    <string name="nexus_answer_delay_hint">Wait after ring while loading ASR/TTS (1–5 s)</string>
     <string name="nexus_llm_enabled">Enable LLM</string>
     <string name="nexus_llm_model">Model</string>
     <string name="nexus_llm_api_key">API key</string>

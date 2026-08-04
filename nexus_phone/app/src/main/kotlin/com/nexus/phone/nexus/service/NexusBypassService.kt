@@ -88,6 +88,12 @@ class NexusBypassService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            ACTION_WARM -> {
+                startAsForeground()
+                thread(name = "NexusAiWarm") {
+                    warmAiEngines()
+                }
+            }
             ACTION_START -> {
                 sessionWanted = true
                 startAsForeground()
@@ -237,49 +243,84 @@ class NexusBypassService : Service() {
         }
     }
 
-    private fun ensureAiLoaded() {
-        NetworkBinder.bindBestInternet(this)
-        val layout = ModelPaths.resolve(this)
-        Log.i(
-            TAG,
-            "models asr=${layout.asrReady()} tts=${layout.ttsReady()} " +
-                "stt=${layout.asrModel} tts=${layout.ttsModel}",
-        )
-        if (asr == null) {
-            asr = SherpaAsr(layout)
-        }
-        val cfg = ConfigRepository(this).load()
-        val sid = cfg.ttsSpeakerId.coerceAtLeast(0)
-        val speed =
-            cfg.ttsSpeed.coerceIn(ConfigRepository.TTS_SPEED_MIN, ConfigRepository.TTS_SPEED_MAX)
-        val existing = tts
-        val needReload =
-            existing == null ||
-                existing.speed != speed ||
-                existing.speakerId != sid ||
-                existing.modelPath != layout.ttsModel.absolutePath
-        if (needReload) {
-            try {
-                existing?.close()
-            } catch (_: Exception) {
-            }
-            tts = SherpaTts(layout, speakerId = sid, speed = speed)
-            Log.i(TAG, "TTS engine ready speaker=$sid speed=$speed model=${layout.ttsModel.name}")
-        }
-        ensureSpeakQueue()
-        if (callLlm == null) {
-            val llmCfg = cfg.llm
-            val ds = DeepSeekClient.fromConfig(llmCfg)
-            callLlm =
-                CallSessionController(llmCfg, ds) { sentence ->
-                    speakQueue?.offer(sentence)
+    private fun warmAiEngines() {
+        val t0 = System.currentTimeMillis()
+        try {
+            // Construct engines; model load + LLM HTTPS prewarm run in parallel so the
+            // ~3s ring delay covers both (models alone already ~2.5s).
+            ensureAiLoaded(syncModels = false)
+            val llmWarm =
+                thread(name = "NexusLlmWarm") {
+                    try {
+                        callLlm?.prewarm()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "llm prewarm", e)
+                    }
                 }
-            Log.i(TAG, "LLM ready=${callLlm?.ready()} model=${llmCfg.model}")
-        }
-        callLlm?.reset()
-        aiExecutor.execute {
+            val tModels0 = System.currentTimeMillis()
             asr?.ensureLoaded()
             tts?.ensureLoaded()
+            val modelsMs = System.currentTimeMillis() - tModels0
+            llmWarm.join(DeepSeekClient.DEFAULT_READ_TIMEOUT_MS.toLong())
+            Log.i(
+                TAG,
+                "warm_ms=${System.currentTimeMillis() - t0} models_ms=$modelsMs",
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "warm failed ms=${System.currentTimeMillis() - t0}", e)
+        }
+    }
+
+    private fun ensureAiLoaded(syncModels: Boolean = false) {
+        synchronized(this) {
+            NetworkBinder.bindBestInternet(this)
+            val layout = ModelPaths.resolve(this)
+            Log.i(
+                TAG,
+                "models asr=${layout.asrReady()} tts=${layout.ttsReady()} " +
+                    "stt=${layout.asrModel} tts=${layout.ttsModel}",
+            )
+            if (asr == null) {
+                asr = SherpaAsr(layout)
+            }
+            val cfg = ConfigRepository(this).load()
+            val sid = cfg.ttsSpeakerId.coerceAtLeast(0)
+            val speed =
+                cfg.ttsSpeed.coerceIn(ConfigRepository.TTS_SPEED_MIN, ConfigRepository.TTS_SPEED_MAX)
+            val existing = tts
+            val needReload =
+                existing == null ||
+                    existing.speed != speed ||
+                    existing.speakerId != sid ||
+                    existing.modelPath != layout.ttsModel.absolutePath
+            if (needReload) {
+                try {
+                    existing?.close()
+                } catch (_: Exception) {
+                }
+                tts = SherpaTts(layout, speakerId = sid, speed = speed)
+                Log.i(TAG, "TTS engine ready speaker=$sid speed=$speed model=${layout.ttsModel.name}")
+            }
+            ensureSpeakQueue()
+            if (callLlm == null) {
+                val llmCfg = cfg.llm
+                val ds = DeepSeekClient.fromConfig(llmCfg)
+                callLlm =
+                    CallSessionController(llmCfg, ds) { sentence ->
+                        speakQueue?.offer(sentence)
+                    }
+                Log.i(TAG, "LLM ready=${callLlm?.ready()} model=${llmCfg.model}")
+            }
+            callLlm?.reset()
+            if (syncModels) {
+                asr?.ensureLoaded()
+                tts?.ensureLoaded()
+            } else {
+                aiExecutor.execute {
+                    asr?.ensureLoaded()
+                    tts?.ensureLoaded()
+                }
+            }
         }
     }
 
@@ -432,24 +473,26 @@ class NexusBypassService : Service() {
     }
 
     private fun releaseAi() {
-        try {
-            speakQueue?.shutdown()
-        } catch (_: Exception) {
+        synchronized(this) {
+            try {
+                speakQueue?.shutdown()
+            } catch (_: Exception) {
+            }
+            speakQueue = null
+            try {
+                asr?.close()
+            } catch (_: Exception) {
+            }
+            try {
+                tts?.close()
+            } catch (_: Exception) {
+            }
+            asr = null
+            tts = null
+            callLlm?.reset()
+            callLlm = null
+            aiBusy.set(false)
         }
-        speakQueue = null
-        try {
-            asr?.close()
-        } catch (_: Exception) {
-        }
-        try {
-            tts?.close()
-        } catch (_: Exception) {
-        }
-        asr = null
-        tts = null
-        callLlm?.reset()
-        callLlm = null
-        aiBusy.set(false)
     }
 
     private fun teardown() {
@@ -469,6 +512,7 @@ class NexusBypassService : Service() {
     companion object {
         private const val TAG = "NexusBypass"
         private const val NOTIFICATION_ID = 42
+        private const val ACTION_WARM = "com.nexus.phone.nexus.action.WARM_AI"
         private const val ACTION_START = "com.nexus.phone.nexus.action.START_SESSION"
         private const val ACTION_END = "com.nexus.phone.nexus.action.END_SESSION"
         private const val ACTION_HUMAN = "com.nexus.phone.nexus.action.HUMAN_MODE"

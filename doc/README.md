@@ -18,6 +18,7 @@
 | [`../docs/superpowers/archive/2026-07-20-nexus-app-architecture/`](../docs/superpowers/archive/2026-07-20-nexus-app-architecture/) | 旧 App 架构提案归档（源码目录 `nexus_app/` 已删除） |
 | [`../docs/superpowers/archive/2026-07-23-tts-speaker-speed/`](../docs/superpowers/archive/2026-07-23-tts-speaker-speed/) | TTS 音色 / 语速 / 试听提案归档 |
 | [`../docs/superpowers/archive/2026-07-25-call-pipeline-latency/`](../docs/superpowers/archive/2026-07-25-call-pipeline-latency/) | 通话旁路延迟优化（埋点 / TTS 队列 / VAD）归档 |
+| [`../docs/superpowers/specs/2026-07-25-ai-answer-prewarm-design.md`](../docs/superpowers/specs/2026-07-25-ai-answer-prewarm-design.md) | AI 响铃预热 + 延迟接听 |
 | [`../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md`](../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md) | Fossify 魔改设计 |
 
 ## 仓库布局

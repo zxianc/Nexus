@@ -96,6 +96,10 @@ class ConfigRepository(context: Context) {
             greetingText =
                 prefs.getString(KEY_GREETING_TEXT, DEFAULT_GREETING_TEXT)
                     ?: DEFAULT_GREETING_TEXT,
+            aiAnswerDelayMs =
+                clampAiAnswerDelayMs(
+                    prefs.getInt(KEY_AI_ANSWER_DELAY_MS, AI_ANSWER_DELAY_MS_DEFAULT),
+                ),
             modelDir = prefs.getString(KEY_MODEL_DIR, null),
             archiveSafUri = prefs.getString(KEY_ARCHIVE_SAF_URI, null),
         )
@@ -132,6 +136,7 @@ class ConfigRepository(context: Context) {
             KEY_GREETING_TEXT,
             cfg.greetingText.ifBlank { DEFAULT_GREETING_TEXT },
         )
+        ed.putInt(KEY_AI_ANSWER_DELAY_MS, clampAiAnswerDelayMs(cfg.aiAnswerDelayMs))
         putOptional(ed, KEY_MODEL_DIR, cfg.modelDir)
         putOptional(ed, KEY_ARCHIVE_SAF_URI, cfg.archiveSafUri)
         ed.commit()
@@ -163,11 +168,19 @@ class ConfigRepository(context: Context) {
         private const val KEY_TTS_SPEED = "tts_speed"
         private const val KEY_GREETING_ENABLED = "greeting_enabled"
         private const val KEY_GREETING_TEXT = "greeting_text"
+        private const val KEY_AI_ANSWER_DELAY_MS = "ai_answer_delay_ms"
         private const val KEY_MODEL_DIR = "model_dir"
         private const val KEY_ARCHIVE_SAF_URI = "archive_saf_uri"
 
         const val TTS_SPEED_MIN = 0.5f
         const val TTS_SPEED_MAX = 2.0f
+
+        const val AI_ANSWER_DELAY_MS_DEFAULT = 3000
+        const val AI_ANSWER_DELAY_MS_MIN = 1000
+        const val AI_ANSWER_DELAY_MS_MAX = 5000
+
+        fun clampAiAnswerDelayMs(ms: Int): Int =
+            ms.coerceIn(AI_ANSWER_DELAY_MS_MIN, AI_ANSWER_DELAY_MS_MAX)
 
         private fun keySim(index: Int, field: String): String = "sim_${index}_$field"
     }
