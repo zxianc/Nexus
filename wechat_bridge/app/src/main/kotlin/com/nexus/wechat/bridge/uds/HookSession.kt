@@ -1,6 +1,9 @@
 package com.nexus.wechat.bridge.uds
 
 import com.nexus.wechat.bridge.state.BridgeState
+import com.nexus.wechat.bridge.state.ChatInfo
+import com.nexus.wechat.bridge.state.MeInfo
+import com.nexus.wechat.bridge.state.MemberInfo
 import com.nexus.wechat.bridge.store.BridgeEvent
 import com.nexus.wechat.bridge.store.EventStore
 import com.nexus.wechat.protocol.WechatFrame
@@ -36,6 +39,8 @@ class HookSession(
     fun onDisconnected() {
         state.hookConnected = false
         state.loggedIn = false
+        state.me = MeInfo()
+        state.chats = emptyList()
         pending.forEach { (_, fut) ->
             fut.complete(SendResult(ok = false, error = "hook_disconnected"))
         }
@@ -48,6 +53,7 @@ class HookSession(
             WechatFrameTypes.HELLO -> handleHello(text)
             WechatFrameTypes.SEND_RESULT -> handleSendResult(text)
             WechatFrameTypes.MSG_IN -> handleMsgIn(text)
+            WechatFrameTypes.MEDIA_READY -> handleMediaReady(text)
             WechatFrameTypes.PONG -> Unit
             WechatFrameTypes.PING -> writeType(WechatFrameTypes.PONG, ByteArray(0))
             else -> Unit
@@ -60,27 +66,47 @@ class HookSession(
         ats: List<String>,
         timeoutMs: Long = 15_000,
     ): SendResult {
+        val body = JSONObject()
+            .put(WechatMsgFields.CHAT_ID, chatId)
+            .put(WechatMsgFields.TEXT, text)
+            .put(WechatMsgFields.ATS, JSONArray(ats))
+        return requestSend(WechatFrameTypes.SEND_TEXT, body, timeoutMs)
+    }
+
+    fun requestSendMedia(
+        chatId: String,
+        kind: String,
+        path: String,
+        name: String,
+        mediaId: String = "",
+        dataB64: String = "",
+        original: Boolean = true,
+        timeoutMs: Long = 60_000,
+    ): SendResult {
+        val type = if (kind == "image") WechatFrameTypes.SEND_IMAGE else WechatFrameTypes.SEND_FILE
+        val body = JSONObject()
+            .put(WechatMsgFields.CHAT_ID, chatId)
+            .put(WechatMsgFields.PATH, path)
+            .put(WechatMsgFields.NAME, name)
+            .put(WechatMsgFields.KIND, kind)
+            .put(WechatMsgFields.MEDIA_ID, mediaId)
+            .put(WechatMsgFields.DATA_B64, dataB64)
+            .put(WechatMsgFields.ORIGINAL, original)
+        return requestSend(type, body, timeoutMs)
+    }
+
+    private fun requestSend(type: Int, body: JSONObject, timeoutMs: Long): SendResult {
         if (!state.hookConnected || writer == null) {
             return SendResult(ok = false, error = "hook_unavailable")
         }
-        if (state.supportedVersion != BridgeState.DEFAULT_SUPPORTED_VERSION &&
-            state.wechatVersion != null &&
-            state.wechatVersion != state.supportedVersion
-        ) {
+        if (state.wechatVersion != null && state.wechatVersion != state.supportedVersion) {
             return SendResult(ok = false, error = "version_mismatch")
-        }
-        if (!state.loggedIn) {
-            return SendResult(ok = false, error = "not_logged_in")
         }
         val requestId = UUID.randomUUID().toString()
         val fut = CompletableFuture<SendResult>()
         pending[requestId] = fut
-        val body = JSONObject()
-            .put(WechatMsgFields.REQUEST_ID, requestId)
-            .put(WechatMsgFields.CHAT_ID, chatId)
-            .put(WechatMsgFields.TEXT, text)
-            .put(WechatMsgFields.ATS, JSONArray(ats))
-        writeType(WechatFrameTypes.SEND_TEXT, body.toString().toByteArray(Charsets.UTF_8))
+        body.put(WechatMsgFields.REQUEST_ID, requestId)
+        writeType(type, body.toString().toByteArray(Charsets.UTF_8))
         return try {
             fut.get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
@@ -97,6 +123,45 @@ class HookSession(
         state.wechatVersion = json.optString(WechatMsgFields.WECHAT_VERSION).ifEmpty { null }
         state.loggedIn = json.optBoolean(WechatMsgFields.LOGGED_IN, false)
         state.hookConnected = true
+        state.me = MeInfo(
+            userId = json.optString(WechatMsgFields.USER_ID, ""),
+            nick = json.optString(WechatMsgFields.NICK, ""),
+        )
+        state.chats = parseChats(json.optJSONArray(WechatMsgFields.CHATS))
+    }
+
+    private fun parseChats(arr: JSONArray?): List<ChatInfo> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<ChatInfo>(arr.length())
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            val chatId = c.optString(WechatMsgFields.CHAT_ID, "")
+            if (chatId.isEmpty()) continue
+            val membersArr = c.optJSONArray(WechatMsgFields.MEMBERS)
+            val members = ArrayList<MemberInfo>()
+            if (membersArr != null) {
+                for (j in 0 until membersArr.length()) {
+                    val m = membersArr.optJSONObject(j) ?: continue
+                    val uid = m.optString(WechatMsgFields.USER_ID, "")
+                    if (uid.isEmpty()) continue
+                    members.add(
+                        MemberInfo(
+                            userId = uid,
+                            display = m.optString(WechatMsgFields.DISPLAY, uid),
+                        ),
+                    )
+                }
+            }
+            out.add(
+                ChatInfo(
+                    chatId = chatId,
+                    title = c.optString(WechatMsgFields.TITLE, chatId),
+                    isGroup = c.optBoolean(WechatMsgFields.IS_GROUP, chatId.endsWith("@chatroom")),
+                    members = members,
+                ),
+            )
+        }
+        return out
     }
 
     private fun handleSendResult(text: String) {
@@ -117,6 +182,18 @@ class HookSession(
     private fun handleMsgIn(text: String) {
         val payload = JSONObject(text)
         eventStore.append(BridgeEvent(0, "message", payload))
+    }
+
+    var onMediaReady: ((mediaId: String, path: String, kind: String, name: String) -> Unit)? = null
+
+    private fun handleMediaReady(text: String) {
+        val json = JSONObject(text)
+        val mediaId = json.optString(WechatMsgFields.MEDIA_ID, "")
+        val path = json.optString(WechatMsgFields.PATH, "")
+        val kind = json.optString(WechatMsgFields.KIND, json.optString(WechatMsgFields.MEDIA_KIND, "file"))
+        val name = json.optString(WechatMsgFields.NAME, json.optString(WechatMsgFields.MEDIA_NAME, "bin"))
+        if (mediaId.isEmpty() || path.isEmpty()) return
+        onMediaReady?.invoke(mediaId, path, kind, name)
     }
 
     private fun writeType(type: Int, payload: ByteArray) {

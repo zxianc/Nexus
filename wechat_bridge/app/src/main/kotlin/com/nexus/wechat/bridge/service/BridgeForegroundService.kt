@@ -12,6 +12,7 @@ import com.nexus.wechat.bridge.BridgeApp
 import com.nexus.wechat.bridge.R
 import com.nexus.wechat.bridge.http.BridgeHttpRouter
 import com.nexus.wechat.bridge.http.BridgeHttpServer
+import com.nexus.wechat.bridge.store.SharedStaging
 import com.nexus.wechat.bridge.uds.HookUdsServer
 
 class BridgeForegroundService : Service() {
@@ -36,6 +37,7 @@ class BridgeForegroundService : Service() {
 
     private fun startServers() {
         val app = BridgeApp.instance
+        SharedStaging.ensureDirs()
         udsServer = HookUdsServer(app.hookSession).also {
             try {
                 it.start()
@@ -43,9 +45,15 @@ class BridgeForegroundService : Service() {
                 Log.e(TAG, "UDS start failed", e)
             }
         }
-        val router = BridgeHttpRouter(app.bridgeState, app.eventStore) { chatId, text, ats ->
-            app.sendTextHttp(chatId, text, ats)
-        }
+        val router = BridgeHttpRouter(
+            state = app.bridgeState,
+            eventStore = app.eventStore,
+            mediaStore = app.mediaStore,
+            sendText = { chatId, text, ats -> app.sendTextHttp(chatId, text, ats) },
+            sendMedia = { chatId, kind, path, name, mediaId, dataB64, original ->
+                app.sendMediaHttp(chatId, kind, path, name, mediaId, dataB64, original)
+            },
+        )
         val server = BridgeHttpServer(router)
         try {
             server.start()

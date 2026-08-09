@@ -1,0 +1,5 @@
+-keep class com.nexus.wechat.** { *; }
+-keepclassmembers class com.nexus.wechat.** { *; }
+-keep class de.robv.android.xposed.** { *; }
+-dontwarn de.robv.android.xposed.**
+-dontwarn org.json.**

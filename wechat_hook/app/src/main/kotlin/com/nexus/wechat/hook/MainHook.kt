@@ -1,6 +1,9 @@
 package com.nexus.wechat.hook
 
 import android.util.Log
+import com.nexus.wechat.hook.recv.RecvDispatcher
+import com.nexus.wechat.hook.runtime.WeChatRuntime
+import com.nexus.wechat.hook.state.ContactDirectory
 import com.nexus.wechat.hook.state.LoginProbe
 import com.nexus.wechat.hook.uds.BridgeUdsClient
 import com.nexus.wechat.hook.version.SupportedWeChat
@@ -14,14 +17,25 @@ class MainHook : IXposedHookLoadPackage {
         XposedBridge.log("nexus_wechat_hook loaded process=${lpparam.processName}")
         Log.i(TAG, "loaded process=${lpparam.processName} versionPin=${SupportedWeChat.VERSION_NAME}")
 
-        // WeChat uses multiple processes; only attach IPC in the main process.
         if (lpparam.processName != SupportedWeChat.PACKAGE) return
 
-        val loginProbe = LoginProbe(lpparam.classLoader)
+        WeChatRuntime.install(lpparam.classLoader)
+
+        val loginProbe = LoginProbe()
+        val contacts = ContactDirectory()
         val client = BridgeUdsClient(
-            classLoader = lpparam.classLoader,
+            fallbackLoader = lpparam.classLoader,
             loginProbe = loginProbe,
+            contacts = contacts,
         )
+        RecvDispatcher(
+            fallbackLoader = lpparam.classLoader,
+            loginProbe = loginProbe,
+            contacts = contacts,
+        ) { type, payload ->
+            client.emitFrame(type, payload)
+        }.install()
+
         Thread(client, "nexus-wechat-uds").apply {
             isDaemon = true
             start()

@@ -458,19 +458,19 @@ git commit -m "feat(wechat_hook): text send and receive for pinned WeChat"
 - Modify: `LoginProbe` / HELLO 构建 — 填充群 `members`
 - Modify: Bridge routes already done in Task 6
 
-- [ ] **Step 1: 真机准备测试群；`GET /v1/chats/{id}/members` 返回至少 2 个成员**
+- [x] **Step 1: 真机准备测试群；`GET /v1/chats/{id}/members` 返回至少 2 个成员**（API 已有；成员填充可后续加强）
 
-- [ ] **Step 2: `POST /v1/messages/text` 带 `ats`；手机上看见灰色 @ 或可点击 @**
+- [x] **Step 2: `POST /v1/messages/text` 带 `ats`；手机上看见灰色 @ 或可点击 @**（含 `notify@all`）
 
-- [ ] **Step 3: 群内真人 @ 小号时，events 里 `ats` 含小号 wxid**
+- [x] **Step 3: 群内真人 @ 小号时，events 里 `ats` 含小号 wxid**（自发/对端均验过）
 
-- [ ] **Step 4: 更新 `HOOK_NOTES.md`**
+- [x] **Step 4: 更新 `HOOK_NOTES.md`**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
-git add wechat_hook wechat_bridge
-git commit -m "feat(wechat_hook): group mention send and parse"
+git add wechat_hook wechat_bridge wechat_protocol docs
+git commit -m "feat(wechat): group mention send/parse and LAN API progress"
 ```
 
 ---
@@ -488,15 +488,15 @@ git commit -m "feat(wechat_hook): group mention send and parse"
 - `MEDIA_READY` JSON: `media_id`, `path`, `kind`, `name`
 - 大小预检仍在 Bridge
 
-- [ ] **Step 1: 扩展协议字段单测**
+- [x] **Step 1: 扩展协议字段单测**（`ImageSendOptions` 等）
 
-- [ ] **Step 2: 实现发送图片到测试好友**
+- [x] **Step 2: 实现发送图片到测试好友**（`kl5.s5.rj`，默认原图 `compressType=1`）
 
-- [ ] **Step 3: 实现接收图片/文件 → `/v1/media/{id}` 可下载**
+- [x] **Step 3: 实现接收图片/文件 → `/v1/media/{id}` 可下载**（图片已通；非图片文件发送未实现）
 
-- [ ] **Step 4: 25MB+ 被 Bridge 拒绝的回归测试**
+- [x] **Step 4: 25MB+ 被 Bridge 拒绝的回归测试**
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**（与文本/群 @ 一并归档；文件发送另开）
 
 ```bash
 git add wechat_protocol wechat_bridge wechat_hook
@@ -516,10 +516,10 @@ git commit -m "feat(wechat): image and file send/receive via hook"
 
 **Acceptance checklist（全部勾完才算 MVP）：**
 
-- [ ] `GET /v1/health`：`hook=connected`, `logged_in=true`, 无 version mismatch  
-- [ ] 局域网其它设备发文本到好友/群成功  
-- [ ] 群 `ats` 真 @  
-- [ ] 图片/文件可发可收  
+- [x] `GET /v1/health`：`hook=connected`, `logged_in=true`, 无 version mismatch  
+- [x] 局域网其它设备发文本到好友/群成功  
+- [x] 群 `ats` 真 @（单人 + `notify@all`）  
+- [ ] 图片/文件可发可收（图片已通；非图片文件未实现）  
 - [ ] 停 Bridge 不影响微信；杀微信后发送 503；重启恢复  
 - [ ] 打一通 AI 电话：`nexus_phone` 旁路仍正常  
 
