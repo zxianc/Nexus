@@ -12,9 +12,11 @@ import com.nexus.wechat.bridge.BridgeApp
 import com.nexus.wechat.bridge.R
 import com.nexus.wechat.bridge.http.BridgeHttpRouter
 import com.nexus.wechat.bridge.http.BridgeHttpServer
+import com.nexus.wechat.bridge.uds.HookUdsServer
 
 class BridgeForegroundService : Service() {
     private var httpServer: BridgeHttpServer? = null
+    private var udsServer: HookUdsServer? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -22,19 +24,28 @@ class BridgeForegroundService : Service() {
         super.onCreate()
         ensureChannel()
         startForeground(NOTIF_ID, buildNotification())
-        startHttp()
+        startServers()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
-        stopHttp()
+        stopServers()
         super.onDestroy()
     }
 
-    private fun startHttp() {
+    private fun startServers() {
         val app = BridgeApp.instance
-        val router = BridgeHttpRouter(app.bridgeState, app.eventStore)
+        udsServer = HookUdsServer(app.hookSession).also {
+            try {
+                it.start()
+            } catch (e: Exception) {
+                Log.e(TAG, "UDS start failed", e)
+            }
+        }
+        val router = BridgeHttpRouter(app.bridgeState, app.eventStore) { chatId, text, ats ->
+            app.sendTextHttp(chatId, text, ats)
+        }
         val server = BridgeHttpServer(router)
         try {
             server.start()
@@ -44,12 +55,17 @@ class BridgeForegroundService : Service() {
         }
     }
 
-    private fun stopHttp() {
+    private fun stopServers() {
         try {
             httpServer?.stop()
         } catch (_: Exception) {
         }
         httpServer = null
+        try {
+            udsServer?.stop()
+        } catch (_: Exception) {
+        }
+        udsServer = null
     }
 
     private fun ensureChannel() {

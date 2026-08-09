@@ -14,6 +14,7 @@ data class RouterResponse(
 class BridgeHttpRouter(
     private val state: BridgeState,
     private val eventStore: EventStore,
+    private val sendText: ((chatId: String, text: String, ats: List<String>) -> Pair<Int, JSONObject>)? = null,
 ) {
     fun handle(
         method: String,
@@ -24,11 +25,39 @@ class BridgeHttpRouter(
         return when {
             method == "GET" && path == "/v1/health" -> health()
             method == "GET" && path == "/v1/events" -> events(query)
+            method == "POST" && path == "/v1/messages/text" -> postText(body)
             else -> RouterResponse(
                 404,
                 JSONObject().put("ok", false).put("error", "not_found"),
             )
         }
+    }
+
+    private fun postText(body: ByteArray?): RouterResponse {
+        val handler = sendText
+            ?: return RouterResponse(503, JSONObject().put("ok", false).put("error", "send_not_ready"))
+        if (body == null || body.isEmpty()) {
+            return RouterResponse(400, JSONObject().put("ok", false).put("error", "empty_body"))
+        }
+        val json = try {
+            JSONObject(body.toString(Charsets.UTF_8))
+        } catch (_: Exception) {
+            return RouterResponse(400, JSONObject().put("ok", false).put("error", "invalid_json"))
+        }
+        val chatId = json.optString("chat_id", "")
+        val text = json.optString("text", "")
+        if (chatId.isEmpty() || text.isEmpty()) {
+            return RouterResponse(400, JSONObject().put("ok", false).put("error", "missing_fields"))
+        }
+        val atsJson = json.optJSONArray("ats")
+        val ats = ArrayList<String>()
+        if (atsJson != null) {
+            for (i in 0 until atsJson.length()) {
+                ats.add(atsJson.getString(i))
+            }
+        }
+        val (status, resp) = handler(chatId, text, ats)
+        return RouterResponse(status, resp)
     }
 
     private fun health(): RouterResponse {
