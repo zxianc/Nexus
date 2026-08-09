@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WeChat Bridge</string>
+    <string name="notification_channel">wechat_bridge</string>
+    <string name="notification_title">WeChat Bridge</string>
+    <string name="notification_text">LAN API listening on :8787</string>
+</resources>
