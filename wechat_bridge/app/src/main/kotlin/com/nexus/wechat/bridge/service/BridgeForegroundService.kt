@@ -6,22 +6,51 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.nexus.wechat.bridge.BridgeApp
 import com.nexus.wechat.bridge.R
+import com.nexus.wechat.bridge.http.BridgeHttpRouter
+import com.nexus.wechat.bridge.http.BridgeHttpServer
 
 class BridgeForegroundService : Service() {
+    private var httpServer: BridgeHttpServer? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
         startForeground(NOTIF_ID, buildNotification())
-        // HTTP / UDS started in Task 3 / Task 4.
-        BridgeApp.instance // touch app singletons
+        startHttp()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+
+    override fun onDestroy() {
+        stopHttp()
+        super.onDestroy()
+    }
+
+    private fun startHttp() {
+        val app = BridgeApp.instance
+        val router = BridgeHttpRouter(app.bridgeState, app.eventStore)
+        val server = BridgeHttpServer(router)
+        try {
+            server.start()
+            httpServer = server
+        } catch (e: Exception) {
+            Log.e(TAG, "HTTP start failed", e)
+        }
+    }
+
+    private fun stopHttp() {
+        try {
+            httpServer?.stop()
+        } catch (_: Exception) {
+        }
+        httpServer = null
+    }
 
     private fun ensureChannel() {
         val nm = getSystemService(NotificationManager::class.java)
@@ -43,6 +72,7 @@ class BridgeForegroundService : Service() {
             .build()
 
     companion object {
+        private const val TAG = "WeChatBridgeSvc"
         private const val CHANNEL_ID = "wechat_bridge"
         private const val NOTIF_ID = 8787
     }
