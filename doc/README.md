@@ -20,6 +20,7 @@
 | [`../docs/superpowers/archive/2026-07-25-call-pipeline-latency/`](../docs/superpowers/archive/2026-07-25-call-pipeline-latency/) | 通话旁路延迟优化（埋点 / TTS 队列 / VAD）归档 |
 | [`../docs/superpowers/specs/2026-07-25-ai-answer-prewarm-design.md`](../docs/superpowers/specs/2026-07-25-ai-answer-prewarm-design.md) | AI 响铃预热 + 延迟接听 |
 | [`../docs/superpowers/specs/2026-08-09-android-wechat-lan-api-design.md`](../docs/superpowers/specs/2026-08-09-android-wechat-lan-api-design.md) | 安卓微信局域网 API（独立 Bridge + LSPosed） |
+| [`../docs/superpowers/plans/2026-08-09-android-wechat-lan-api.md`](../docs/superpowers/plans/2026-08-09-android-wechat-lan-api.md) | 安卓微信局域网 API 实现计划 |
 | [`../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md`](../docs/superpowers/specs/2026-07-22-nexus-phone-fossify-mod-design.md) | Fossify 魔改设计 |
 
 ## 仓库布局

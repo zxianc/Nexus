@@ -1,7 +1,7 @@
 # Android 微信局域网 API（独立模块）设计
 
 **日期：** 2026-08-09  
-**状态：** Draft（待实现计划）  
+**状态：** Spec approved；实现计划见 `docs/superpowers/plans/2026-08-09-android-wechat-lan-api.md`  
 **范围：** 仅本机安卓微信；不做 Windows / WeChatFerry / 网页协议  
 **与 Nexus 电话栈关系：** 完全独立，不依赖 `nexus_phone` / `nexus_audio_hook`
 
