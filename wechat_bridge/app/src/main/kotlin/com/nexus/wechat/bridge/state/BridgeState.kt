@@ -7,7 +7,7 @@ data class BridgeState(
     @Volatile var wechatVersion: String? = null,
 ) {
     companion object {
-        /** Filled when a WeChat APK is pinned; mismatch gates sends. */
-        const val DEFAULT_SUPPORTED_VERSION = "UNPINNED"
+        /** Must match wechat_hook SupportedWeChat.VERSION_NAME. */
+        const val DEFAULT_SUPPORTED_VERSION = "8.0.76"
     }
 }
