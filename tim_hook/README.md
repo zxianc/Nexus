@@ -1,6 +1,7 @@
 # Nexus TIM Hook (LSPosed)
 
-Injects pinned **TIM** (`com.tencent.tim`) and connects to `tim_bridge` via abstract UDS `@nexus_tim`.
+Injects pinned **TIM** (`com.tencent.tim`) and connects to `tim_bridge` via loopback TCP  
+`127.0.0.1:18788` (TIM SELinux blocks abstract UDS).
 
 ## Pin
 

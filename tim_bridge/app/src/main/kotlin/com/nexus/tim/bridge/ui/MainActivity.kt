@@ -20,7 +20,7 @@ class MainActivity : AppCompatActivity() {
             val s = TimApp.instance.bridgeState
             status.text = buildString {
                 appendLine("TIM Bridge")
-                appendLine("HTTP :8788 · UDS @nexus_tim")
+                appendLine("HTTP :8788 · Hook IPC 127.0.0.1:18788")
                 appendLine("Hook: ${if (s.hookConnected) "connected" else "disconnected"}")
                 appendLine("Logged in: ${if (s.loggedIn) "yes" else "no"}")
                 appendLine("Me: ${s.me.userId.ifEmpty { "—" }} (${s.me.nick})")

@@ -2,30 +2,31 @@ package com.nexus.tim.hook.uds
 
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import android.util.Log
 import com.nexus.tim.hook.MainHook
 import com.nexus.tim.hook.state.LoginProbe
 import com.nexus.tim.hook.version.SupportedTim
 import com.nexus.tim.protocol.TimFrame
 import com.nexus.tim.protocol.TimFrameTypes
+import com.nexus.tim.protocol.TimIpc
 import com.nexus.tim.protocol.TimMsgFields
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.atomic.AtomicReference
 
 class BridgeUdsClient(
     private val appContextProvider: () -> Context?,
     private val loginProbe: LoginProbe,
 ) : Runnable {
-    private val liveSocket = AtomicReference<LocalSocket?>(null)
+    private val liveSocket = AtomicReference<Socket?>(null)
 
     override fun run() {
         while (!Thread.currentThread().isInterrupted) {
             try {
                 sessionLoop()
             } catch (e: Throwable) {
-                Log.w(MainHook.TAG, "UDS session error: ${e.message}")
+                Log.w(MainHook.TAG, "IPC session error: ${e.message}")
             } finally {
                 liveSocket.set(null)
             }
@@ -38,31 +39,55 @@ class BridgeUdsClient(
     }
 
     private fun sessionLoop() {
-        LocalSocket().use { sock ->
+        Socket().use { sock ->
             sock.connect(
-                LocalSocketAddress(SOCKET_NAME, LocalSocketAddress.Namespace.ABSTRACT),
+                InetSocketAddress(TimIpc.TCP_HOST, TimIpc.TCP_PORT),
+                CONNECT_TIMEOUT_MS,
             )
+            sock.tcpNoDelay = true
             liveSocket.set(sock)
-            Log.i(MainHook.TAG, "connected to bridge UDS @$SOCKET_NAME")
+            Log.i(MainHook.TAG, "connected to bridge tcp://${TimIpc.TCP_HOST}:${TimIpc.TCP_PORT}")
             writeHello(sock)
 
-            var pending = ByteArray(0)
-            val tmp = ByteArray(8192)
-            val input = sock.inputStream
-            while (!Thread.currentThread().isInterrupted) {
-                val n = input.read(tmp)
-                if (n < 0) break
-                pending += tmp.copyOf(n)
-                val (frames, rest) = TimFrame.decodeAll(pending)
-                pending = rest
-                for (f in frames) {
-                    handleFrame(sock, f.type, f.payload)
+            val helloRefresh = Thread({
+                while (!Thread.currentThread().isInterrupted && liveSocket.get() === sock) {
+                    try {
+                        Thread.sleep(HELLO_REFRESH_MS)
+                    } catch (_: InterruptedException) {
+                        break
+                    }
+                    try {
+                        writeHello(sock)
+                    } catch (_: Throwable) {
+                        break
+                    }
                 }
+            }, "nexus-tim-hello-refresh").apply {
+                isDaemon = true
+                start()
+            }
+
+            try {
+                var pending = ByteArray(0)
+                val tmp = ByteArray(8192)
+                val input = sock.getInputStream()
+                while (!Thread.currentThread().isInterrupted) {
+                    val n = input.read(tmp)
+                    if (n < 0) break
+                    pending += tmp.copyOf(n)
+                    val (frames, rest) = TimFrame.decodeAll(pending)
+                    pending = rest
+                    for (f in frames) {
+                        handleFrame(sock, f.type, f.payload)
+                    }
+                }
+            } finally {
+                helloRefresh.interrupt()
             }
         }
     }
 
-    private fun handleFrame(sock: LocalSocket, type: Int, payload: ByteArray) {
+    private fun handleFrame(sock: Socket, type: Int, payload: ByteArray) {
         when (type) {
             TimFrameTypes.PING -> write(sock, TimFrameTypes.PONG, ByteArray(0))
             TimFrameTypes.SEND_TEXT -> {
@@ -78,7 +103,7 @@ class BridgeUdsClient(
         }
     }
 
-    private fun writeHello(sock: LocalSocket) {
+    private fun writeHello(sock: Socket) {
         val appContext = appContextProvider()
         val snap = loginProbe.probe(appContext)
         val version = resolveVersionName(appContext)
@@ -104,16 +129,17 @@ class BridgeUdsClient(
         }
     }
 
-    private fun write(sock: LocalSocket, type: Int, payload: ByteArray) {
+    private fun write(sock: Socket, type: Int, payload: ByteArray) {
         val bytes = TimFrame.encode(type, payload)
         synchronized(sock) {
-            sock.outputStream.write(bytes)
-            sock.outputStream.flush()
+            sock.getOutputStream().write(bytes)
+            sock.getOutputStream().flush()
         }
     }
 
     companion object {
-        const val SOCKET_NAME = "nexus_tim"
         private const val RECONNECT_MS = 2_000L
+        private const val CONNECT_TIMEOUT_MS = 3_000
+        private const val HELLO_REFRESH_MS = 8_000L
     }
 }
