@@ -19,15 +19,32 @@ class TimHttpRouter(
     private val state: BridgeState,
     private val eventStore: EventStore,
     private val sendText: ((chatId: String, text: String) -> Pair<Int, JSONObject>)? = null,
+    private val authEnabled: () -> Boolean = { false },
+    private val authToken: () -> String = { "" },
 ) {
     fun handle(
         method: String,
         path: String,
         query: Map<String, String>,
         body: ByteArray?,
+        headers: Map<String, String> = emptyMap(),
     ): RouterResponse {
+        val isHealth = method == "GET" && path == "/v1/health"
+        if (!isHealth &&
+            !ApiTokenAuth.isAuthorized(
+                enabled = authEnabled(),
+                expectedToken = authToken(),
+                headers = headers,
+                query = query,
+            )
+        ) {
+            return RouterResponse.json(
+                401,
+                JSONObject().put("ok", false).put("error", "unauthorized"),
+            )
+        }
         return when {
-            method == "GET" && path == "/v1/health" -> health()
+            isHealth -> health()
             method == "GET" && path == "/v1/me" -> me()
             method == "GET" && path == "/v1/events" -> events(query)
             method == "POST" && path == "/v1/messages/text" -> postText(body)

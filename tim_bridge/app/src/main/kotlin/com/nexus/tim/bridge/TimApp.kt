@@ -1,12 +1,16 @@
 package com.nexus.tim.bridge
 
 import android.app.Application
+import com.nexus.tim.bridge.config.BridgeConfig
+import com.nexus.tim.bridge.config.BridgeConfigStore
+import com.nexus.tim.bridge.push.OutboundHub
 import com.nexus.tim.bridge.queue.SendQueue
 import com.nexus.tim.bridge.state.BridgeState
 import com.nexus.tim.bridge.store.EventStore
 import com.nexus.tim.bridge.uds.HookSession
 import com.nexus.tim.bridge.uds.SendResult
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicReference
 
 class TimApp : Application() {
     lateinit var eventStore: EventStore
@@ -17,14 +21,31 @@ class TimApp : Application() {
         private set
     lateinit var sendQueue: SendQueue
         private set
+    lateinit var configStore: BridgeConfigStore
+        private set
+    lateinit var outbound: OutboundHub
+        private set
+
+    private val configRef = AtomicReference(BridgeConfig())
 
     override fun onCreate() {
         super.onCreate()
         instance = this
+        configStore = BridgeConfigStore(this)
+        configRef.set(configStore.load())
+        outbound = OutboundHub { configRef.get() }
         eventStore = EventStore()
         bridgeState = BridgeState(supportedVersion = BridgeState.DEFAULT_SUPPORTED_VERSION)
-        hookSession = HookSession(bridgeState, eventStore)
+        hookSession = HookSession(bridgeState, eventStore, outbound)
         sendQueue = SendQueue(hookSession)
+    }
+
+    fun currentConfig(): BridgeConfig = configRef.get()
+
+    fun saveConfig(config: BridgeConfig) {
+        val n = config.normalized()
+        configStore.save(n)
+        configRef.set(n)
     }
 
     fun sendTextHttp(chatId: String, text: String): Pair<Int, JSONObject> {

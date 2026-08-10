@@ -1,5 +1,6 @@
 package com.nexus.tim.bridge.uds
 
+import com.nexus.tim.bridge.push.OutboundHub
 import com.nexus.tim.bridge.state.BridgeState
 import com.nexus.tim.bridge.state.MeInfo
 import com.nexus.tim.bridge.store.BridgeEvent
@@ -23,6 +24,7 @@ data class SendResult(
 class HookSession(
     private val state: BridgeState,
     private val eventStore: EventStore,
+    private val outbound: OutboundHub? = null,
 ) {
     @Volatile
     var writer: ((ByteArray) -> Unit)? = null
@@ -30,21 +32,29 @@ class HookSession(
     @Volatile
     var onStatusChanged: (() -> Unit)? = null
 
+    private var wasConnected = false
     private val pending = ConcurrentHashMap<String, CompletableFuture<SendResult>>()
 
     fun onConnected() {
+        wasConnected = true
         state.hookConnected = true
         notifyStatus()
     }
 
     fun onDisconnected() {
+        val hadHook = wasConnected || state.hookConnected
         state.hookConnected = false
         state.loggedIn = false
+        state.recvHook = false
         state.me = MeInfo()
         pending.forEach { (_, fut) ->
             fut.complete(SendResult(ok = false, error = "hook_disconnected"))
         }
         pending.clear()
+        if (hadHook) {
+            wasConnected = false
+            outbound?.alert("hook_disconnected", "TIM hook disconnected")
+        }
         notifyStatus()
     }
 
@@ -53,9 +63,7 @@ class HookSession(
         when (type) {
             TimFrameTypes.HELLO -> handleHello(text)
             TimFrameTypes.SEND_RESULT -> handleSendResult(text)
-            TimFrameTypes.MSG_IN -> {
-                eventStore.append(BridgeEvent(0, "message", JSONObject(text)))
-            }
+            TimFrameTypes.MSG_IN -> handleMsgIn(text)
             TimFrameTypes.PING -> writeType(TimFrameTypes.PONG, ByteArray(0))
             else -> Unit
         }
@@ -93,10 +101,21 @@ class HookSession(
         state.loggedIn = json.optBoolean(TimMsgFields.LOGGED_IN, false)
         state.recvHook = json.optBoolean("recv_hook", false)
         state.hookConnected = true
+        wasConnected = true
         state.me = MeInfo(
             userId = json.optString(TimMsgFields.USER_ID, ""),
             nick = json.optString(TimMsgFields.NICK, ""),
         )
+        val ver = state.timVersion
+        if (ver != null && ver != state.supportedVersion) {
+            outbound?.alert(
+                "version_mismatch",
+                "TIM version $ver != supported ${state.supportedVersion}",
+                JSONObject()
+                    .put("tim_version", ver)
+                    .put("supported", state.supportedVersion),
+            )
+        }
         notifyStatus()
     }
 
@@ -104,13 +123,28 @@ class HookSession(
         val json = JSONObject(text)
         val requestId = json.optString(TimMsgFields.REQUEST_ID, "")
         val fut = pending.remove(requestId) ?: return
+        val error = json.optString(TimMsgFields.ERROR).ifEmpty { null }
+        val ok = json.optBoolean(TimMsgFields.OK, false)
         fut.complete(
             SendResult(
-                ok = json.optBoolean(TimMsgFields.OK, false),
+                ok = ok,
                 msgId = json.optString(TimMsgFields.MSG_ID).ifEmpty { null },
-                error = json.optString(TimMsgFields.ERROR).ifEmpty { null },
+                error = error,
             ),
         )
+        if (!ok && !error.isNullOrBlank()) {
+            outbound?.alert(
+                "send_failed",
+                "Send failed: $error",
+                JSONObject().put("error", error).put("request_id", requestId),
+            )
+        }
+    }
+
+    private fun handleMsgIn(text: String) {
+        val payload = JSONObject(text)
+        eventStore.append(BridgeEvent(0, "message", payload))
+        outbound?.publishEvent("message", payload)
     }
 
     private fun writeType(type: Int, payload: ByteArray) {

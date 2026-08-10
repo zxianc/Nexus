@@ -30,4 +30,27 @@ class TimHttpRouterTest {
         assertEquals(true, body.json!!.getBoolean("logged_in"))
         assertEquals("12345", body.json!!.getString("user_id"))
     }
+
+    @Test
+    fun auth_blocksMe_allowsHealth() {
+        val state = BridgeState(supportedVersion = "4.1.0")
+        val router = TimHttpRouter(
+            state,
+            EventStore(),
+            authEnabled = { true },
+            authToken = { "tok" },
+        )
+        assertEquals(200, router.handle("GET", "/v1/health", emptyMap(), null).status)
+        assertEquals(401, router.handle("GET", "/v1/me", emptyMap(), null).status)
+        assertEquals(
+            503,
+            router.handle(
+                "GET",
+                "/v1/me",
+                emptyMap(),
+                null,
+                headers = mapOf("authorization" to "Bearer tok"),
+            ).status,
+        )
+    }
 }

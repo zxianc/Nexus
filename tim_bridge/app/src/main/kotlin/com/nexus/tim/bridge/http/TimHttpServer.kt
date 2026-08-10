@@ -20,11 +20,14 @@ class TimHttpServer(
         val body = readBody(session)
         val query = HashMap<String, String>()
         session.parms?.let { query.putAll(it) }
+        val headers = HashMap<String, String>()
+        session.headers?.let { headers.putAll(it) }
         val result = router.handle(
             method = session.method.name,
             path = session.uri,
             query = query,
             body = body,
+            headers = headers,
         )
         val status = Response.Status.lookup(result.status) ?: Response.Status.INTERNAL_ERROR
         return newFixedLengthResponse(

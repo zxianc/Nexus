@@ -57,12 +57,15 @@ class TimForegroundService : Service() {
                 it.start()
             } catch (e: Exception) {
                 Log.e(TAG, "UDS start failed", e)
+                app.outbound.alert("uds_start_failed", "Hook IPC start failed: ${e.message}")
             }
         }
         val router = TimHttpRouter(
             state = app.bridgeState,
             eventStore = app.eventStore,
             sendText = { chatId, text -> app.sendTextHttp(chatId, text) },
+            authEnabled = { app.currentConfig().apiAuthEnabled },
+            authToken = { app.currentConfig().apiToken },
         )
         try {
             TimHttpServer(router).also {
@@ -71,6 +74,7 @@ class TimForegroundService : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "HTTP start failed", e)
+            app.outbound.alert("http_start_failed", "HTTP :8788 start failed: ${e.message}")
         }
     }
 
