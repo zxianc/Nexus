@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import com.nexus.tim.hook.MainHook
+import com.nexus.tim.hook.send.SendDispatcher
 import com.nexus.tim.hook.state.LoginProbe
 import com.nexus.tim.hook.version.SupportedTim
 import com.nexus.tim.protocol.TimFrame
@@ -18,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReference
 class BridgeUdsClient(
     private val appContextProvider: () -> Context?,
     private val loginProbe: LoginProbe,
+    private val hostClassLoader: ClassLoader,
 ) : Runnable {
     private val liveSocket = AtomicReference<Socket?>(null)
 
@@ -92,11 +94,7 @@ class BridgeUdsClient(
             TimFrameTypes.PING -> write(sock, TimFrameTypes.PONG, ByteArray(0))
             TimFrameTypes.SEND_TEXT -> {
                 val req = JSONObject(payload.toString(Charsets.UTF_8))
-                val requestId = req.optString(TimMsgFields.REQUEST_ID, "")
-                val result = JSONObject()
-                    .put(TimMsgFields.REQUEST_ID, requestId)
-                    .put(TimMsgFields.OK, false)
-                    .put(TimMsgFields.ERROR, "send_not_implemented")
+                val result = SendDispatcher(hostClassLoader, appContextProvider()).sendText(req)
                 write(sock, TimFrameTypes.SEND_RESULT, result.toString().toByteArray())
             }
             else -> Unit

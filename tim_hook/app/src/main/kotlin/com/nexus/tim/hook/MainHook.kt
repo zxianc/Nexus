@@ -28,6 +28,7 @@ class MainHook : IXposedHookLoadPackage {
                 }
             },
             loginProbe = loginProbe,
+            hostClassLoader = lpparam.classLoader,
         )
         Thread(client, "nexus-tim-uds").apply {
             isDaemon = true
