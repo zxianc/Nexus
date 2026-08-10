@@ -1,5 +1,7 @@
 # TIM Bridge LAN API
 
+安装与验收见 **[使用指南](../docs/tim-lan-api-guide.md)**。
+
 Base: `http://<phone-ip>:8788`  
 Hook IPC: `127.0.0.1:18788` (internal)  
 Debug AppId: `com.nexus.tim.bridge.debug`

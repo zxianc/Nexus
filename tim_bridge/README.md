@@ -1,8 +1,10 @@
 # TIM Bridge
 
-LAN gateway for pinned TIM. HTTP `:8788`, UDS `@nexus_tim`.
+LAN gateway for pinned TIM. HTTP `:8788`, Hook IPC `127.0.0.1:18788`.
 
-See plan: [`docs/superpowers/plans/2026-08-10-android-tim-lan-api.md`](../docs/superpowers/plans/2026-08-10-android-tim-lan-api.md).
+- 使用指南：[`docs/tim-lan-api-guide.md`](../docs/tim-lan-api-guide.md)
+- API：[`API.md`](API.md)
+- 设计/计划：[`docs/superpowers/`](../docs/superpowers/)
 
 ```bat
 cd tim_bridge
