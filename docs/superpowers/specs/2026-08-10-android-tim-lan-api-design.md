@@ -1,7 +1,7 @@
 # Android TIM 局域网 API（独立模块）设计
 
 **日期：** 2026-08-10  
-**状态：** Spec draft（待用户审阅）  
+**状态：** Spec approved；实现计划见 `docs/superpowers/plans/2026-08-10-android-tim-lan-api.md`  
 **范围：** 仅本机安卓 **TIM**（QQ 精简客户端）；不做微信 / 官方 QQ OpenAPI / Windows  
 **与现有栈关系：** 与 `wechat_*`、`nexus_phone` **并列独立**；可同机共存，不改微信工程
 
