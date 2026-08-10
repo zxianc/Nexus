@@ -50,6 +50,7 @@ class TimHttpRouter(
                 .put("supported_tim_version", state.supportedVersion)
                 .put("logged_in", state.loggedIn)
                 .put("tim_version_mismatch", mismatch)
+                .put("recv_hook", state.recvHook)
                 .put("user_id", state.me.userId)
                 .put("nick", state.me.nick),
         )

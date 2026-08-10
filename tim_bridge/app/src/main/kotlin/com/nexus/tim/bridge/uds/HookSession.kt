@@ -91,6 +91,7 @@ class HookSession(
         val json = JSONObject(text)
         state.timVersion = json.optString(TimMsgFields.TIM_VERSION).ifEmpty { null }
         state.loggedIn = json.optBoolean(TimMsgFields.LOGGED_IN, false)
+        state.recvHook = json.optBoolean("recv_hook", false)
         state.hookConnected = true
         state.me = MeInfo(
             userId = json.optString(TimMsgFields.USER_ID, ""),

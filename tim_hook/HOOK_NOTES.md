@@ -9,22 +9,37 @@
 - `sp_login_auto` keys = current uin digits (e.g. `3086243780`)
 - Account prefs: `/data/data/com.tencent.tim/shared_prefs/<uin>.xml`
 
-## Send text (candidate)
+## Send text (TIM 4.1.0 / QQNT)
 
-Class: `com.tencent.mobileqq.activity.ChatActivityFacade`
+**Do not use** `ChatActivityFacade.H0` — it only calls `J0`, and `J0` is a stub that returns an empty `long[]`. Facade “success” ≠ delivery.
 
-| Method | Signature (abbrev) | Notes |
-|--------|--------------------|-------|
-| `H0` | `(QQAppInterface, Context, SessionInfo, String)V` | likely plain text |
-| `I0` | `(…, SessionInfo, String, ArrayList)V` | text + @ list |
-| `G` / `c0` / `U` | `(QQAppInterface, SessionInfo, String)…` | alternates |
+### Working path (NT)
 
-`SessionInfo` extends / related to `com.tencent.mobileqq.activity.aio.q` with public fields including:
+1. `QRoute.api(IMsgUtilApi).createTextElement(text)` → `MsgElement`
+2. `Contact(chatType, peerUid, guildId)`  
+   - C2C `chatType=1`, Group `chatType=2`  
+   - C2C `peerUid` = NT uid (`IRelationNTUinAndUidApi.getUidFromUin` / `getFriendUidFromUin`)  
+   - Group `peerUid` = troop uin digits
+3. `QRoute.api(IMsgService).sendMsg(contact, elements, callback)`  
+   **Not** `addSendMsg` — that only stages locally (message spins forever).
 
-- `d` : `int` — try as **uinType** (`0` friend, `1` troop)
-- `e` : `String` — try as **peer uin**
+Key classes:
 
-App runtime: `mqq.app.MobileQQ` / `com.tencent.mobileqq.app.QQAppInterface`.
+- `com.tencent.qqnt.msg.api.IMsgService`
+- `com.tencent.qqnt.msg.api.IMsgUtilApi`
+- `com.tencent.qqnt.kernelpublic.nativeinterface.Contact`
+- `com.tencent.relation.common.api.IRelationNTUinAndUidApi`
+
+Legacy `SessionInfo` / `QQMessageFacade` kept only as fallback.
+
+## Recv text (MSG_IN)
+
+Hook:
+
+- `com.tencent.qqnt.kernel.api.impl.MsgService$getListener$1.onRecvMsg(ArrayList)`
+- `com.tencent.qqnt.msg.MsgService$c.onRecvMsg(ArrayList)` (fan-out; deduped)
+
+Parse `MsgRecord`: `chatType` 1/2, `peerUid`/`peerUin`, `senderUin`, `elements[].textElement.content`.
 
 ## chat_id (MVP)
 

@@ -10,6 +10,7 @@ data class BridgeState(
     @Volatile var hookConnected: Boolean = false,
     @Volatile var loggedIn: Boolean = false,
     @Volatile var timVersion: String? = null,
+    @Volatile var recvHook: Boolean = false,
     @Volatile var me: MeInfo = MeInfo(),
 ) {
     companion object {

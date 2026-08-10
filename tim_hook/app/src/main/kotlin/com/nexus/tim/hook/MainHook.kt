@@ -2,6 +2,8 @@ package com.nexus.tim.hook
 
 import android.app.AndroidAppHelper
 import android.util.Log
+import com.nexus.tim.hook.recv.RecvDispatcher
+import com.nexus.tim.hook.send.LoginUin
 import com.nexus.tim.hook.state.LoginProbe
 import com.nexus.tim.hook.uds.BridgeUdsClient
 import com.nexus.tim.hook.version.SupportedTim
@@ -18,18 +20,27 @@ class MainHook : IXposedHookLoadPackage {
         if (lpparam.processName != SupportedTim.PACKAGE) return
 
         val loginProbe = LoginProbe()
-        // Application context is often null at LoadPackage; client refreshes each HELLO.
+        val appContextProvider = {
+            try {
+                AndroidAppHelper.currentApplication()?.applicationContext
+            } catch (_: Throwable) {
+                null
+            }
+        }
         val client = BridgeUdsClient(
-            appContextProvider = {
-                try {
-                    AndroidAppHelper.currentApplication()?.applicationContext
-                } catch (_: Throwable) {
-                    null
-                }
-            },
+            appContextProvider = appContextProvider,
             loginProbe = loginProbe,
             hostClassLoader = lpparam.classLoader,
         )
+        RecvDispatcher(
+            classLoader = lpparam.classLoader,
+            selfUinProvider = {
+                val ctx = appContextProvider()
+                if (ctx != null) LoginUin.self(lpparam.classLoader, ctx) else ""
+            },
+            emit = { type, payload -> client.emit(type, payload) },
+        ).install()
+
         Thread(client, "nexus-tim-uds").apply {
             isDaemon = true
             start()

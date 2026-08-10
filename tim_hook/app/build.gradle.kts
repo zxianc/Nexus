@@ -14,20 +14,17 @@ android {
         applicationId = "com.nexus.tim.hook"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         multiDexEnabled = true
         multiDexKeepProguard = file("multidex-keep.pro")
     }
 
     buildTypes {
         debug {
-            isMinifyEnabled = true
+            // Keep symbols/logs for LSPosed field debugging.
+            isMinifyEnabled = false
             isShrinkResources = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
         }
         release {
             isMinifyEnabled = true

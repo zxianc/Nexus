@@ -22,6 +22,7 @@ class MainActivity : AppCompatActivity() {
                 appendLine("TIM Bridge")
                 appendLine("HTTP :8788 · Hook IPC 127.0.0.1:18788")
                 appendLine("Hook: ${if (s.hookConnected) "connected" else "disconnected"}")
+                appendLine("Recv hook: ${if (s.recvHook) "yes" else "no"}")
                 appendLine("Logged in: ${if (s.loggedIn) "yes" else "no"}")
                 appendLine("Me: ${s.me.userId.ifEmpty { "—" }} (${s.me.nick})")
                 appendLine("TIM: ${s.timVersion ?: "—"} / pin ${s.supportedVersion}")
