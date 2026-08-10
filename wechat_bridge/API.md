@@ -1,6 +1,84 @@
 # WeChat Bridge LAN API
 
+安装、原理与验收步骤见 **[使用指南](../docs/wechat-lan-api-guide.md)**。
+
 Base: `http://<phone-ip>:8787`
+
+## 接口鉴权（App 内配置）
+
+App 可开启 **API Token**。开启后除 `GET /v1/health` 外均需鉴权，否则 `401` + `unauthorized`。
+
+任选一种传法：
+
+```bash
+curl -H "Authorization: Bearer <token>" http://127.0.0.1:8787/v1/me
+curl -H "X-Api-Token: <token>" http://127.0.0.1:8787/v1/chats
+curl "http://127.0.0.1:8787/v1/events?after=0&token=<token>"
+```
+
+未开启鉴权时行为与之前相同（局域网内任意可访问）。
+
+## 出站推送（App 内配置）
+
+Bridge App 可配置：
+
+| 项 | 说明 |
+|----|------|
+| Redis host / port / password / stream key | 启用后，消息事件实时 `XADD` 到 **Redis Stream**（默认 key `nexus:wechat:events`） |
+| Webhook URL | **仅告警**（Hook 断开、版本不匹配、Redis 失败、发送失败等），不推业务消息。通用 JSON；若 URL 为企微群机器人 `qyapi.weixin.qq.com`，自动包装为 `msgtype=text` |
+
+- `/v1/events` **仍保留**，但是内存环形缓冲（约 200 条），**不做本地持久化**；生产消费请以 Redis Stream 为准
+- 局域网示例：`docker run -d --name nexus-redis -p 6379:6379 redis:7-alpine`
+
+### Redis 存储说明（Stream）
+
+Bridge **只写不读**：把事件追加进 Stream，**不包含**消费者逻辑。业务服务需自行 `XREAD` / `XREADGROUP`。
+
+与普通 Redis KV（`SET`/`GET`）的区别：
+
+| | KV | Stream（本项目使用） |
+|--|----|----------------------|
+| 模型 | 一个 key 对应当前值，写入常覆盖 | 一个 key 下挂可追加的消息日志 |
+| 适合 | 配置、缓存、最新状态 | 消息流、异步消费、多消费者 |
+| Bridge 行为 | 不用 | 每条事件 `XADD` 一条，旧条目仍保留 |
+
+**条目字段**（`XADD` 的 field-value）：
+
+| field | 含义 |
+|-------|------|
+| `type` | 事件类型：`message`（收/发消息）、`media_ready`（媒体就绪） |
+| `ts` | Bridge 写入时的毫秒时间戳（字符串） |
+| `data` | 事件 JSON 字符串（与 `/v1/events` 的 payload 同结构，见下文「区分是谁发来的」） |
+
+**数据流**：
+
+```text
+微信 → Hook → Bridge → Redis XADD → Stream key（默认 nexus:wechat:events）
+                              ↑
+                     你的服务 XREAD / 消费组读取
+```
+
+**消费示例**：
+
+```bash
+# 从尾部阻塞读（演示用；生产建议消费组）
+redis-cli -h <redis-host> XREAD COUNT 10 BLOCK 5000 STREAMS nexus:wechat:events $
+
+# 消费组（可断点续读、多 worker）
+redis-cli XGROUP CREATE nexus:wechat:events wechat_workers 0 MKSTREAM
+redis-cli XREADGROUP GROUP wechat_workers worker1 COUNT 10 BLOCK 5000 \
+  STREAMS nexus:wechat:events >
+# 处理成功后 ACK
+redis-cli XACK nexus:wechat:events wechat_workers <entry-id>
+```
+
+**无人消费时**：
+
+- Bridge 仍正常 `XADD`，收发微信不受影响
+- 条目会一直积压在 Stream 中（当前未设置 `MAXLEN`），长期可能占满 Redis 内存
+- 需要业务侧消费，或自行用 `XTRIM` / 配置 `MAXLEN` 做裁剪；暂时不用时可在 App 关闭 Redis
+
+**失败行为**：`XADD` 失败时 App 状态栏会显示 Redis 错误；若配置了 Webhook，会额外告警 `redis_publish_failed`。Webhook **不会**代替 Redis 投递业务消息。
 
 ## 发送目标（可配置）
 
@@ -109,4 +187,11 @@ curl -X POST http://127.0.0.1:8787/v1/messages/file ^
 - `GET /v1/health` — bridge/hook/登录态
 - `GET /v1/me` — 本机 `user_id` / `nick`
 - `GET /v1/chats` — 最近会话（可作发送目标列表）
-- `GET /v1/chats/{chat_id}/members` — 群成员（HELLO 里带了才有）
+- `GET /v1/contacts` — **全部好友**（`rcontact` 好友位；`user_id` + `display`；上限约 2000）
+- `GET /v1/groups` — **全部群**（`chatroom` 表；`chat_id` + `title`；上限约 500）
+- `GET /v1/chats/{chat_id}/members` — 群成员（`chatroom.memberlist`；最近会话或 `/v1/groups` 里出现过的群均可）
+
+```bash
+curl http://127.0.0.1:8787/v1/contacts
+curl http://127.0.0.1:8787/v1/groups
+```

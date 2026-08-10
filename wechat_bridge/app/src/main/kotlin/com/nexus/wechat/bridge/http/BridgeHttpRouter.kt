@@ -28,6 +28,8 @@ class BridgeHttpRouter(
     private val mediaStore: MediaStore? = null,
     private val sendText: ((chatId: String, text: String, ats: List<String>) -> Pair<Int, JSONObject>)? = null,
     private val sendMedia: ((chatId: String, kind: String, path: String, name: String, mediaId: String, dataB64: String, original: Boolean) -> Pair<Int, JSONObject>)? = null,
+    private val authEnabled: () -> Boolean = { false },
+    private val authToken: () -> String = { "" },
 ) {
     fun handle(
         method: String,
@@ -36,13 +38,31 @@ class BridgeHttpRouter(
         body: ByteArray?,
         form: Map<String, String> = emptyMap(),
         files: Map<String, File> = emptyMap(),
+        headers: Map<String, String> = emptyMap(),
     ): RouterResponse {
         val membersMatch = MEMBERS_PATH.matchEntire(path)
         val mediaMatch = MEDIA_PATH.matchEntire(path)
+        // Health stays open so LAN probes work without leaking chat data.
+        val needsAuth = !(method == "GET" && path == "/v1/health")
+        if (needsAuth &&
+            !ApiTokenAuth.isAuthorized(
+                enabled = authEnabled(),
+                expectedToken = authToken(),
+                headers = headers,
+                query = query,
+            )
+        ) {
+            return RouterResponse.json(
+                401,
+                JSONObject().put("ok", false).put("error", "unauthorized"),
+            )
+        }
         return when {
             method == "GET" && path == "/v1/health" -> health()
             method == "GET" && path == "/v1/me" -> me()
             method == "GET" && path == "/v1/chats" -> chats()
+            method == "GET" && path == "/v1/contacts" -> contacts()
+            method == "GET" && path == "/v1/groups" -> groups()
             method == "GET" && membersMatch != null -> members(membersMatch.groupValues[1])
             method == "GET" && mediaMatch != null -> getMedia(mediaMatch.groupValues[1])
             method == "GET" && path == "/v1/events" -> events(query)
@@ -215,12 +235,50 @@ class BridgeHttpRouter(
         )
     }
 
+    private fun contacts(): RouterResponse {
+        if (!state.hookConnected) {
+            return RouterResponse.json(503, JSONObject().put("ok", false).put("error", "hook_unavailable"))
+        }
+        val arr = JSONArray()
+        for (c in state.contacts) {
+            arr.put(
+                JSONObject()
+                    .put(WechatMsgFields.USER_ID, c.userId)
+                    .put(WechatMsgFields.DISPLAY, c.display),
+            )
+        }
+        return RouterResponse.json(
+            200,
+            JSONObject().put("ok", true).put(WechatMsgFields.CONTACTS, arr),
+        )
+    }
+
+    private fun groups(): RouterResponse {
+        if (!state.hookConnected) {
+            return RouterResponse.json(503, JSONObject().put("ok", false).put("error", "hook_unavailable"))
+        }
+        val arr = JSONArray()
+        for (g in state.groups) {
+            arr.put(
+                JSONObject()
+                    .put(WechatMsgFields.CHAT_ID, g.chatId)
+                    .put(WechatMsgFields.TITLE, g.title)
+                    .put(WechatMsgFields.IS_GROUP, true),
+            )
+        }
+        return RouterResponse.json(
+            200,
+            JSONObject().put("ok", true).put(WechatMsgFields.GROUPS, arr),
+        )
+    }
+
     private fun members(chatId: String): RouterResponse {
         if (!state.hookConnected) {
             return RouterResponse.json(503, JSONObject().put("ok", false).put("error", "hook_unavailable"))
         }
         val decoded = java.net.URLDecoder.decode(chatId, Charsets.UTF_8.name())
         val chat = state.chats.firstOrNull { it.chatId == decoded }
+            ?: state.groups.firstOrNull { it.chatId == decoded }
             ?: return RouterResponse.json(404, JSONObject().put("ok", false).put("error", "chat_not_found"))
         return RouterResponse.json(
             200,

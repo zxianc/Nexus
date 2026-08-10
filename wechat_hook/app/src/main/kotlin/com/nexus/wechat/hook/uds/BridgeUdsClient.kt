@@ -131,26 +131,35 @@ class BridgeUdsClient(
         val hello = buildHello()
         val sig = "${hello.optBoolean(WechatMsgFields.LOGGED_IN)}|" +
             "${hello.optString(WechatMsgFields.USER_ID)}|" +
-            "${hello.optJSONArray(WechatMsgFields.CHATS)?.length() ?: 0}"
+            "${hello.optJSONArray(WechatMsgFields.CHATS)?.length() ?: 0}|" +
+            "${hello.optJSONArray(WechatMsgFields.CONTACTS)?.length() ?: 0}|" +
+            "${hello.optJSONArray(WechatMsgFields.GROUPS)?.length() ?: 0}"
         if (!force && sig == lastHelloSig) return
         lastHelloSig = sig
         write(sock, WechatFrameTypes.HELLO, hello.toString().toByteArray())
         Log.i(
             MainHook.TAG,
             "HELLO logged_in=${hello.optBoolean(WechatMsgFields.LOGGED_IN)} " +
-                "chats=${hello.optJSONArray(WechatMsgFields.CHATS)?.length() ?: 0}",
+                "chats=${hello.optJSONArray(WechatMsgFields.CHATS)?.length() ?: 0} " +
+                "contacts=${hello.optJSONArray(WechatMsgFields.CONTACTS)?.length() ?: 0} " +
+                "groups=${hello.optJSONArray(WechatMsgFields.GROUPS)?.length() ?: 0}",
         )
     }
 
     private fun buildHello(): JSONObject {
         loginProbe.refreshIdentity()
+        val selfId = loginProbe.userIdOrEmpty()
         val chats = contacts.listChats()
+        val contactList = contacts.listContacts(selfId = selfId)
+        val groups = contacts.listGroups()
         return JSONObject()
             .put(WechatMsgFields.WECHAT_VERSION, SupportedWeChat.VERSION_NAME)
             .put(WechatMsgFields.LOGGED_IN, loginProbe.isLoggedIn())
-            .put(WechatMsgFields.USER_ID, loginProbe.userIdOrEmpty())
+            .put(WechatMsgFields.USER_ID, selfId)
             .put(WechatMsgFields.NICK, loginProbe.nickOrEmpty())
             .put(WechatMsgFields.CHATS, chats)
+            .put(WechatMsgFields.CONTACTS, contactList)
+            .put(WechatMsgFields.GROUPS, groups)
     }
 
     private fun write(sock: LocalSocket, type: Int, payload: ByteArray) {

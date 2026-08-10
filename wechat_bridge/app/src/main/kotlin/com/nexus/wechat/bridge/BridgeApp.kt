@@ -1,6 +1,10 @@
 package com.nexus.wechat.bridge
 
 import android.app.Application
+import android.util.Log
+import com.nexus.wechat.bridge.config.BridgeConfig
+import com.nexus.wechat.bridge.config.BridgeConfigStore
+import com.nexus.wechat.bridge.push.OutboundHub
 import com.nexus.wechat.bridge.queue.SendQueue
 import com.nexus.wechat.bridge.state.BridgeState
 import com.nexus.wechat.bridge.store.EventStore
@@ -10,6 +14,7 @@ import com.nexus.wechat.bridge.uds.SendResult
 import com.nexus.wechat.protocol.WechatMsgFields
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.atomic.AtomicReference
 
 class BridgeApp : Application() {
     lateinit var eventStore: EventStore
@@ -22,20 +27,49 @@ class BridgeApp : Application() {
         private set
     lateinit var sendQueue: SendQueue
         private set
+    lateinit var configStore: BridgeConfigStore
+        private set
+    lateinit var outbound: OutboundHub
+        private set
+
+    private val configRef = AtomicReference(BridgeConfig())
+
+    fun currentConfig(): BridgeConfig = configRef.get()
+
+    fun reloadConfig(): BridgeConfig {
+        val c = configStore.load()
+        configRef.set(c)
+        return c
+    }
+
+    fun saveConfig(config: BridgeConfig): BridgeConfig {
+        val c = config.normalized()
+        configStore.save(c)
+        configRef.set(c)
+        return c
+    }
 
     override fun onCreate() {
         super.onCreate()
         instance = this
+        configStore = BridgeConfigStore(this)
+        configRef.set(configStore.load())
         eventStore = EventStore()
         bridgeState = BridgeState(supportedVersion = BridgeState.DEFAULT_SUPPORTED_VERSION)
         mediaStore = MediaStore(File(cacheDir, "wechat_media"))
-        hookSession = HookSession(bridgeState, eventStore).also { session ->
+        outbound = OutboundHub { configRef.get() }
+        hookSession = HookSession(bridgeState, eventStore, outbound).also { session ->
             session.onMediaReady = { mediaId, path, kind, name ->
                 try {
                     val registered = mediaStore.registerIncoming(path, kind, name, preferredId = mediaId)
-                    android.util.Log.i("WeChatBridge", "MEDIA_READY id=$registered path=$path")
+                    Log.i(TAG, "MEDIA_READY id=$registered path=$path")
                 } catch (e: Exception) {
-                    android.util.Log.w("WeChatBridge", "MEDIA_READY register failed", e)
+                    Log.w(TAG, "MEDIA_READY register failed", e)
+                    outbound.alert(
+                        "media_register_failed",
+                        e.message ?: "media register failed",
+                        JSONObject().put("media_id", mediaId),
+                    )
                 }
             }
         }
@@ -86,6 +120,7 @@ class BridgeApp : Application() {
     }
 
     companion object {
+        private const val TAG = "WeChatBridge"
         lateinit var instance: BridgeApp
             private set
     }

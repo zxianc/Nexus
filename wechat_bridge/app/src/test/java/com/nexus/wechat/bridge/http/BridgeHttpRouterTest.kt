@@ -2,6 +2,7 @@ package com.nexus.wechat.bridge.http
 
 import com.nexus.wechat.bridge.state.BridgeState
 import com.nexus.wechat.bridge.state.ChatInfo
+import com.nexus.wechat.bridge.state.ContactInfo
 import com.nexus.wechat.bridge.state.MeInfo
 import com.nexus.wechat.bridge.state.MemberInfo
 import com.nexus.wechat.bridge.store.EventStore
@@ -68,6 +69,65 @@ class BridgeHttpRouterTest {
         assertEquals(200, members.status)
         assertEquals(1, members.json!!.getJSONArray("members").length())
         assertEquals("Alice", members.json!!.getJSONArray("members").getJSONObject(0).getString("display"))
+    }
+
+    @Test
+    fun apiAuth_blocksWithoutToken() {
+        val state = BridgeState(supportedVersion = "8.0.76").apply { hookConnected = true }
+        val router = BridgeHttpRouter(
+            state = state,
+            eventStore = EventStore(),
+            authEnabled = { true },
+            authToken = { "s3cret" },
+        )
+        val denied = router.handle("GET", "/v1/me", emptyMap(), null)
+        assertEquals(401, denied.status)
+        assertEquals("unauthorized", denied.json!!.getString("error"))
+
+        val health = router.handle("GET", "/v1/health", emptyMap(), null)
+        assertEquals(200, health.status)
+
+        val ok = router.handle(
+            "GET",
+            "/v1/me",
+            emptyMap(),
+            null,
+            headers = mapOf("authorization" to "Bearer s3cret"),
+        )
+        assertEquals(200, ok.status)
+    }
+
+    @Test
+    fun contacts_and_groups_from_state() {
+        val state = BridgeState(supportedVersion = "8.0.76").apply {
+            hookConnected = true
+            contacts = listOf(
+                ContactInfo("wxid_a", "Alice"),
+                ContactInfo("wxid_b", "Bob"),
+            )
+            groups = listOf(
+                ChatInfo(
+                    chatId = "999@chatroom",
+                    title = "OnlyInGroups",
+                    isGroup = true,
+                    members = listOf(MemberInfo("wxid_b", "Bob")),
+                ),
+            )
+        }
+        val router = BridgeHttpRouter(state, EventStore())
+        val contacts = router.handle("GET", "/v1/contacts", emptyMap(), null)
+        assertEquals(200, contacts.status)
+        assertEquals(2, contacts.json!!.getJSONArray("contacts").length())
+        assertEquals("Bob", contacts.json!!.getJSONArray("contacts").getJSONObject(1).getString("display"))
+
+        val groups = router.handle("GET", "/v1/groups", emptyMap(), null)
+        assertEquals(200, groups.status)
+        assertEquals(1, groups.json!!.getJSONArray("groups").length())
+        assertEquals("999@chatroom", groups.json!!.getJSONArray("groups").getJSONObject(0).getString("chat_id"))
+
+        val members = router.handle("GET", "/v1/chats/999@chatroom/members", emptyMap(), null)
+        assertEquals(200, members.status)
+        assertEquals(1, members.json!!.getJSONArray("members").length())
     }
 
     @Test

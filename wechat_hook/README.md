@@ -2,6 +2,8 @@
 
 独立 LSPosed 模块：注入锁定版本微信，经 abstract UDS `@nexus_wechat` 与 `wechat_bridge` 通信。
 
+完整安装与原理说明见 **[微信局域网 API 使用指南](../docs/wechat-lan-api-guide.md)**。
+
 ## 风险
 
 - 非官方 Hook，可能违反微信用户协议，存在封号风险。

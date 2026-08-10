@@ -41,3 +41,9 @@ models/
 
 # Agent scratch (SDD ledgers / briefs)
 .superpowers/
+tmp_*/
+tmp_wechat/
+tmp_lsposed/
+tmp_sherpa/
+**/androguard.db
+wechat_bridge/tools/preview_*.png

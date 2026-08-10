@@ -17,6 +17,11 @@ data class ChatInfo(
     val members: List<MemberInfo> = emptyList(),
 )
 
+data class ContactInfo(
+    val userId: String,
+    val display: String,
+)
+
 data class BridgeState(
     val supportedVersion: String,
     @Volatile var hookConnected: Boolean = false,
@@ -24,6 +29,10 @@ data class BridgeState(
     @Volatile var wechatVersion: String? = null,
     @Volatile var me: MeInfo = MeInfo(),
     @Volatile var chats: List<ChatInfo> = emptyList(),
+    /** Full friends from rcontact (HELLO). */
+    @Volatile var contacts: List<ContactInfo> = emptyList(),
+    /** All chatrooms from chatroom table (HELLO); members usually empty. */
+    @Volatile var groups: List<ChatInfo> = emptyList(),
 ) {
     fun membersOf(chatId: String): List<MemberInfo> =
         chats.firstOrNull { it.chatId == chatId }?.members.orEmpty()

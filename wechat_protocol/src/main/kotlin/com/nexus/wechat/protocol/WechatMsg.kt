@@ -39,4 +39,8 @@ object WechatMsgFields {
     const val USER_ID = "user_id"
     const val NICK = "nick"
     const val CHATS = "chats"
+    /** Full friend list (HELLO / GET /v1/contacts). */
+    const val CONTACTS = "contacts"
+    /** Full group list (HELLO / GET /v1/groups). */
+    const val GROUPS = "groups"
 }

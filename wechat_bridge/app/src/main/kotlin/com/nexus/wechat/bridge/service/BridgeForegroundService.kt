@@ -3,9 +3,12 @@ package com.nexus.wechat.bridge.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.nexus.wechat.bridge.BridgeApp
@@ -13,24 +16,37 @@ import com.nexus.wechat.bridge.R
 import com.nexus.wechat.bridge.http.BridgeHttpRouter
 import com.nexus.wechat.bridge.http.BridgeHttpServer
 import com.nexus.wechat.bridge.store.SharedStaging
+import com.nexus.wechat.bridge.ui.MainActivity
 import com.nexus.wechat.bridge.uds.HookUdsServer
 
 class BridgeForegroundService : Service() {
     private var httpServer: BridgeHttpServer? = null
     private var udsServer: HookUdsServer? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastNotifText: String? = null
+
+    private val statusListener: () -> Unit = {
+        mainHandler.post { refreshNotification() }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         ensureChannel()
+        BridgeApp.instance.hookSession.onStatusChanged = statusListener
         startForeground(NOTIF_ID, buildNotification())
         startServers()
+        refreshNotification()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
+        val session = BridgeApp.instance.hookSession
+        if (session.onStatusChanged === statusListener) {
+            session.onStatusChanged = null
+        }
         stopServers()
         super.onDestroy()
     }
@@ -43,6 +59,7 @@ class BridgeForegroundService : Service() {
                 it.start()
             } catch (e: Exception) {
                 Log.e(TAG, "UDS start failed", e)
+                app.outbound.alert("uds_start_failed", e.message ?: "UDS start failed")
             }
         }
         val router = BridgeHttpRouter(
@@ -53,6 +70,8 @@ class BridgeForegroundService : Service() {
             sendMedia = { chatId, kind, path, name, mediaId, dataB64, original ->
                 app.sendMediaHttp(chatId, kind, path, name, mediaId, dataB64, original)
             },
+            authEnabled = { app.currentConfig().apiAuthEnabled },
+            authToken = { app.currentConfig().apiToken },
         )
         val server = BridgeHttpServer(router)
         try {
@@ -60,6 +79,7 @@ class BridgeForegroundService : Service() {
             httpServer = server
         } catch (e: Exception) {
             Log.e(TAG, "HTTP start failed", e)
+            app.outbound.alert("http_start_failed", e.message ?: "HTTP start failed")
         }
     }
 
@@ -87,13 +107,39 @@ class BridgeForegroundService : Service() {
         )
     }
 
-    private fun buildNotification(): Notification =
-        NotificationCompat.Builder(this, CHANNEL_ID)
+    private fun refreshNotification() {
+        val text = statusText()
+        if (text == lastNotifText) return
+        lastNotifText = text
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(NOTIF_ID, buildNotification(text))
+    }
+
+    private fun statusText(): String {
+        val state = BridgeApp.instance.bridgeState
+        val hook = if (state.hookConnected) "connected" else "disconnected"
+        val login = if (state.loggedIn) "yes" else "no"
+        val me = state.me.userId.ifEmpty { "—" }
+        return "Hook: $hook · logged in: $login · $me"
+    }
+
+    private fun buildNotification(text: String = statusText()): Notification {
+        val open = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
+            .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .build()
+    }
 
     companion object {
         private const val TAG = "WeChatBridgeSvc"

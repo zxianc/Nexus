@@ -3,6 +3,8 @@ package com.nexus.wechat.hook.state
 import android.util.Log
 import com.nexus.wechat.hook.MainHook
 import com.nexus.wechat.protocol.ChatSendPolicy
+import com.nexus.wechat.protocol.ChatroomMemberList
+import com.nexus.wechat.protocol.ContactDirectoryFilter
 import com.nexus.wechat.protocol.WechatMsgFields
 import de.robv.android.xposed.XposedHelpers
 import org.json.JSONArray
@@ -11,6 +13,9 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Resolve chat list + display names from EnMicroMsg tables.
+ *
+ * Group members: `SELECT memberlist FROM chatroom WHERE chatroomname=?`
+ * (semicolon-separated wxids), display via `rcontact` remark/nickname.
  */
 class ContactDirectory {
     private val displayCache = ConcurrentHashMap<String, String>()
@@ -28,6 +33,24 @@ class ContactDirectory {
             return name
         }
         return userId
+    }
+
+    /** Members for `@chatroom` from `chatroom.memberlist`; private chats → empty. */
+    fun listMembers(chatId: String, selfId: String = "", selfNick: String = ""): JSONArray {
+        val arr = JSONArray()
+        val id = chatId.trim()
+        if (!id.endsWith("@chatroom")) return arr
+        val db = DbHolder.bestDb() ?: return arr
+        val raw = queryMemberlist(db, id) ?: return arr
+        for (wxid in ChatroomMemberList.parse(raw)) {
+            val display = displayOf(wxid, selfId, selfNick)
+            arr.put(
+                JSONObject()
+                    .put(WechatMsgFields.USER_ID, wxid)
+                    .put(WechatMsgFields.DISPLAY, display),
+            )
+        }
+        return arr
     }
 
     /**
@@ -65,12 +88,13 @@ class ContactDirectory {
             if (chatId.startsWith("fake_") || chatId.endsWith("@stranger")) continue
             val isGroup = chatId.endsWith("@chatroom")
             val title = queryDisplay(db, chatId).ifEmpty { fallbackTitle }.ifEmpty { chatId }
+            val members = if (isGroup) listMembers(chatId) else JSONArray()
             arr.put(
                 JSONObject()
                     .put(WechatMsgFields.CHAT_ID, chatId)
                     .put(WechatMsgFields.TITLE, title)
                     .put(WechatMsgFields.IS_GROUP, isGroup)
-                    .put(WechatMsgFields.MEMBERS, JSONArray()),
+                    .put(WechatMsgFields.MEMBERS, members),
             )
             if (title.isNotEmpty() && title != chatId) {
                 displayCache[chatId] = title
@@ -96,11 +120,81 @@ class ContactDirectory {
         return arr
     }
 
+    /** Address-book friends from `rcontact` (type bit0), not limited to recent chats. */
+    fun listContacts(limit: Int = 2000, selfId: String = ""): JSONArray {
+        val arr = JSONArray()
+        val db = DbHolder.bestDb() ?: return arr
+        val rows = queryFriendRows(db, limit)
+        val self = selfId.trim()
+        for ((userId, fallback) in rows) {
+            if (self.isNotEmpty() && userId == self) continue
+            if (!ContactDirectoryFilter.isPrivateFriendCandidate(userId)) continue
+            val display = queryDisplay(db, userId).ifEmpty { fallback }.ifEmpty { userId }
+            if (display.isNotEmpty() && display != userId) {
+                displayCache[userId] = display
+            }
+            arr.put(
+                JSONObject()
+                    .put(WechatMsgFields.USER_ID, userId)
+                    .put(WechatMsgFields.DISPLAY, display),
+            )
+        }
+        return arr
+    }
+
+    /** All joined chatrooms from `chatroom` table. */
+    fun listGroups(limit: Int = 500): JSONArray {
+        val arr = JSONArray()
+        val db = DbHolder.bestDb() ?: return arr
+        val rows = queryChatroomRows(db, limit)
+        for ((chatId, fallbackTitle) in rows) {
+            if (!ContactDirectoryFilter.isChatroomId(chatId)) continue
+            val title = queryDisplay(db, chatId)
+                .ifEmpty { fallbackTitle }
+                .ifEmpty { chatId }
+            if (title.isNotEmpty() && title != chatId) {
+                displayCache[chatId] = title
+            }
+            arr.put(
+                JSONObject()
+                    .put(WechatMsgFields.CHAT_ID, chatId)
+                    .put(WechatMsgFields.TITLE, title)
+                    .put(WechatMsgFields.IS_GROUP, true)
+                    .put(WechatMsgFields.MEMBERS, listMembers(chatId)),
+            )
+        }
+        return arr
+    }
+
     private fun queryRecentTalkers(db: Any, limit: Int): List<Pair<String, String>> {
         val sqls = listOf(
             "SELECT username, '' FROM rconversation ORDER BY conversationTime DESC LIMIT $limit",
             "SELECT talker, '' FROM message GROUP BY talker ORDER BY max(createTime) DESC LIMIT $limit",
             "SELECT username, nickname FROM rcontact WHERE type & 1 != 0 AND username NOT LIKE '%@%' LIMIT $limit",
+        )
+        for (sql in sqls) {
+            val rows = rawQueryPairs(db, sql)
+            if (rows.isNotEmpty()) return rows
+        }
+        return emptyList()
+    }
+
+    private fun queryFriendRows(db: Any, limit: Int): List<Pair<String, String>> {
+        val sqls = listOf(
+            "SELECT username, nickname FROM rcontact WHERE (type & 1) != 0 AND (deleteFlag IS NULL OR deleteFlag = 0) LIMIT $limit",
+            "SELECT username, nickname FROM rcontact WHERE (type & 1) != 0 LIMIT $limit",
+        )
+        for (sql in sqls) {
+            val rows = rawQueryPairs(db, sql)
+            if (rows.isNotEmpty()) return rows
+        }
+        return emptyList()
+    }
+
+    private fun queryChatroomRows(db: Any, limit: Int): List<Pair<String, String>> {
+        val sqls = listOf(
+            "SELECT chatroomname, displayname FROM chatroom LIMIT $limit",
+            "SELECT chatroomname, '' FROM chatroom LIMIT $limit",
         )
         for (sql in sqls) {
             val rows = rawQueryPairs(db, sql)
@@ -118,6 +212,17 @@ class ContactDirectory {
             val nick = getString(cursor, 1)
             val alias = getString(cursor, 2)
             return remark.ifEmpty { nick }.ifEmpty { alias }
+        } finally {
+            closeQuietly(cursor)
+        }
+    }
+
+    private fun queryMemberlist(db: Any, chatroom: String): String? {
+        val sql = "SELECT memberlist FROM chatroom WHERE chatroomname=? LIMIT 1"
+        val cursor = rawQuery(db, sql, arrayOf(chatroom)) ?: return null
+        try {
+            if (!moveToFirst(cursor)) return null
+            return getString(cursor, 0).takeIf { it.isNotBlank() }
         } finally {
             closeQuietly(cursor)
         }
