@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TIM Bridge</string>
+    <string name="notification_channel">TIM Bridge</string>
+    <string name="notification_title">TIM Bridge</string>
+</resources>

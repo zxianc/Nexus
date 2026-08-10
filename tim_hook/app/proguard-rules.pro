@@ -1,0 +1,5 @@
+-keep class com.nexus.tim.** { *; }
+-keepclassmembers class com.nexus.tim.** { *; }
+-keep class de.robv.android.xposed.** { *; }
+-dontwarn de.robv.android.xposed.**
+-dontwarn org.json.**
