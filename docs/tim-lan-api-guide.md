@@ -137,7 +137,22 @@ redis-cli XREAD COUNT 10 BLOCK 5000 STREAMS nexus:tim:events $
 
 ---
 
-## 6. 常见问题
+## 6. 与微信栈差距（对齐进度）
+
+| 能力 | 微信 | TIM |
+|------|------|-----|
+| 文本收发 + events | ✓ | ✓ |
+| Redis / Webhook / Token | ✓ | ✓ |
+| Compose Bridge UI | ✓ | ✓（已对齐） |
+| chats / contacts / groups API | ✓ | ✗ |
+| 群成员 / 群 @ | ✓ | ✗ |
+| 图片收发 / MEDIA_READY | ✓ | ✗ |
+| HELLO 同步通讯录 | ✓ | ✗（仅 me） |
+| filehelper | ✓ | 不适用 |
+
+---
+
+## 7. 常见问题
 
 | 现象 | 处理 |
 |------|------|

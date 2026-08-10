@@ -42,10 +42,11 @@ class TimApp : Application() {
 
     fun currentConfig(): BridgeConfig = configRef.get()
 
-    fun saveConfig(config: BridgeConfig) {
+    fun saveConfig(config: BridgeConfig): BridgeConfig {
         val n = config.normalized()
         configStore.save(n)
         configRef.set(n)
+        return n
     }
 
     fun sendTextHttp(chatId: String, text: String): Pair<Int, JSONObject> {
