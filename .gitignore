@@ -47,3 +47,6 @@ tmp_lsposed/
 tmp_sherpa/
 **/androguard.db
 wechat_bridge/tools/preview_*.png
+
+hs_err_pid*.log
+
