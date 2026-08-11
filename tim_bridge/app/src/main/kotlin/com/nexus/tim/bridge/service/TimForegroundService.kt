@@ -15,6 +15,7 @@ import com.nexus.tim.bridge.R
 import com.nexus.tim.bridge.TimApp
 import com.nexus.tim.bridge.http.TimHttpRouter
 import com.nexus.tim.bridge.http.TimHttpServer
+import com.nexus.tim.bridge.store.SharedStaging
 import com.nexus.tim.bridge.ui.MainActivity
 import com.nexus.tim.bridge.uds.HookUdsServer
 
@@ -52,6 +53,7 @@ class TimForegroundService : Service() {
 
     private fun startServers() {
         val app = TimApp.instance
+        SharedStaging.ensureDirs()
         udsServer = HookUdsServer(app.hookSession).also {
             try {
                 it.start()
@@ -63,7 +65,12 @@ class TimForegroundService : Service() {
         val router = TimHttpRouter(
             state = app.bridgeState,
             eventStore = app.eventStore,
-            sendText = { chatId, text -> app.sendTextHttp(chatId, text) },
+            mediaStore = app.mediaStore,
+            sendText = { chatId, text, ats -> app.sendTextHttp(chatId, text, ats) },
+            sendMedia = { chatId, kind, path, name, mediaId, dataB64, original ->
+                app.sendImageHttp(chatId, kind, path, name, mediaId, dataB64, original)
+            },
+            fetchMembers = { chatId -> app.fetchMembersHttp(chatId) },
             authEnabled = { app.currentConfig().apiAuthEnabled },
             authToken = { app.currentConfig().apiToken },
         )

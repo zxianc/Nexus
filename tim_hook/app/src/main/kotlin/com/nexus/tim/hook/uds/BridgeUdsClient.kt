@@ -144,8 +144,44 @@ class BridgeUdsClient(
             TimFrameTypes.PING -> write(sock, TimFrameTypes.PONG, ByteArray(0))
             TimFrameTypes.SEND_TEXT -> {
                 val req = JSONObject(payload.toString(Charsets.UTF_8))
-                val result = SendDispatcher(hostClassLoader, appContextProvider()).sendText(req)
+                val result = SendDispatcher(
+                    hostClassLoader,
+                    appContextProvider(),
+                    contacts = contacts,
+                ).sendText(req)
                 write(sock, TimFrameTypes.SEND_RESULT, result.toString().toByteArray())
+            }
+            TimFrameTypes.SEND_IMAGE -> {
+                val req = JSONObject(payload.toString(Charsets.UTF_8))
+                val result = SendDispatcher(
+                    hostClassLoader,
+                    appContextProvider(),
+                    contacts = contacts,
+                ).sendImage(req)
+                write(sock, TimFrameTypes.SEND_RESULT, result.toString().toByteArray())
+            }
+            TimFrameTypes.LIST_MEMBERS -> {
+                val req = JSONObject(payload.toString(Charsets.UTF_8))
+                val chatId = req.optString(TimMsgFields.CHAT_ID, "")
+                val requestId = req.optString(TimMsgFields.REQUEST_ID, "")
+                val result = try {
+                    val members = contacts.listMembers(chatId)
+                    contacts.listMembersResult(
+                        requestId = requestId,
+                        chatId = chatId,
+                        membersArr = members,
+                        error = if (members.length() == 0) "members_empty" else null,
+                    )
+                } catch (t: Throwable) {
+                    Log.w(MainHook.TAG, "LIST_MEMBERS failed: ${t.message}")
+                    contacts.listMembersResult(
+                        requestId = requestId,
+                        chatId = chatId,
+                        membersArr = JSONArray(),
+                        error = t.message ?: "members_failed",
+                    )
+                }
+                write(sock, TimFrameTypes.LIST_MEMBERS_RESULT, result.toString().toByteArray())
             }
             else -> Unit
         }

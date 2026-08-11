@@ -3,10 +3,12 @@ package com.nexus.tim.hook.recv
 import android.util.Log
 import com.nexus.tim.hook.MainHook
 import com.nexus.tim.protocol.TimFrameTypes
+import com.nexus.tim.protocol.TimGroupAt
 import com.nexus.tim.protocol.TimMsgFields
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -80,8 +82,10 @@ class RecvDispatcher(
         try {
             val chatType = intField(rec, "chatType")
             if (chatType != CHAT_TYPE_C2C && chatType != CHAT_TYPE_GROUP) return
-            val text = extractText(rec) ?: return
-            if (text.isEmpty()) return
+            val text = extractText(rec).orEmpty()
+            val selfUin = selfUinProvider()
+            val at = if (chatType == CHAT_TYPE_GROUP) extractAtInfo(rec, selfUin) else AtInfo.EMPTY
+            if (text.isEmpty() && at.ats.isEmpty()) return
 
             val msgId = longField(rec, "msgId").toString()
             val peerUid = stringField(rec, "peerUid")
@@ -100,7 +104,6 @@ class RecvDispatcher(
                 senderUid.isNotEmpty() -> uinFromUid(senderUid).ifEmpty { senderUid }
                 else -> ""
             }
-            val selfUin = selfUinProvider()
             val isSelf = selfUin.isNotEmpty() && fromId == selfUin
 
             val dedupe = "$chatId|$msgId"
@@ -121,8 +124,14 @@ class RecvDispatcher(
                 .put(TimMsgFields.IS_GROUP, chatType == CHAT_TYPE_GROUP)
                 .put(TimMsgFields.CHAT_TITLE, peerName)
                 .put(TimMsgFields.TS, msgTime)
+                .put(TimMsgFields.ATS, JSONArray(at.ats))
+                .put(TimMsgFields.AT_ME, at.atMe)
+                .put(TimMsgFields.AT_ALL, at.atAll)
 
-            note("MSG_IN chat=$chatId from=$fromId id=$msgId text=${text.take(40)}")
+            note(
+                "MSG_IN chat=$chatId from=$fromId id=$msgId " +
+                    "at_me=${at.atMe} at_all=${at.atAll} ats=${at.ats.size} text=${text.take(40)}",
+            )
             emit(TimFrameTypes.MSG_IN, payload.toString().toByteArray(Charsets.UTF_8))
         } catch (t: Throwable) {
             note("handleRecord failed: ${t.javaClass.simpleName}:${t.message}")
@@ -185,6 +194,103 @@ class RecvDispatcher(
         return sb.toString().ifEmpty { null }
     }
 
+    private data class AtInfo(
+        val ats: List<String>,
+        val atMe: Boolean,
+        val atAll: Boolean,
+    ) {
+        companion object {
+            val EMPTY = AtInfo(ats = emptyList(), atMe = false, atAll = false)
+        }
+    }
+
+    private fun extractAtInfo(rec: Any, selfUin: String): AtInfo {
+        val elements = field(rec, "elements") as? List<*> ?: return AtInfo.EMPTY
+        val (atUnknown, atAllType, atOneType, atMeType) = loadAtTypes()
+        val ats = ArrayList<String>()
+        val seen = HashSet<String>()
+        var atAll = false
+        var atMe = false
+        for (el in elements) {
+            if (el == null) continue
+            val textEl = field(el, "textElement") ?: continue
+            val atType = intField(textEl, "atType")
+            if (atType == 0 || atType == atUnknown) continue
+            if (atType == atAllType) {
+                atAll = true
+                if (seen.add(TimGroupAt.NOTIFY_ALL)) ats.add(TimGroupAt.NOTIFY_ALL)
+                continue
+            }
+            if (atType == atMeType) {
+                atMe = true
+            }
+            val uin = resolveAtUin(textEl)
+            if (uin.isNotEmpty()) {
+                if (seen.add(uin)) ats.add(uin)
+                if (selfUin.isNotEmpty() && uin == selfUin) atMe = true
+            } else if (atType == atOneType || atType == atMeType) {
+                // Keep at_me even if uin resolve failed for ATTYPEME.
+            }
+        }
+        if (atAll) atMe = true
+        return AtInfo(ats = ats, atMe = atMe, atAll = atAll)
+    }
+
+    private fun resolveAtUin(textEl: Any): String {
+        val atUid = longField(textEl, "atUid")
+        if (atUid > 0) return atUid.toString()
+        val atUidStr = stringField(textEl, "atUid")
+        if (atUidStr.matches(Regex("\\d{5,12}"))) return atUidStr
+        val atNtUid = stringField(textEl, "atNtUid")
+            .ifEmpty { stringField(textEl, "atUidStr") }
+        if (atNtUid.matches(Regex("\\d{5,12}"))) return atNtUid
+        if (atNtUid.isNotEmpty()) {
+            val uin = uinFromUid(atNtUid)
+            if (uin.matches(Regex("\\d{5,12}"))) return uin
+        }
+        return ""
+    }
+
+    private data class AtTypes(
+        val unknown: Int,
+        val all: Int,
+        val one: Int,
+        val me: Int,
+    )
+
+    private fun loadAtTypes(): AtTypes {
+        return try {
+            val cl = classLoader.loadClass("com.tencent.qqnt.kernel.nativeinterface.MsgConstant")
+            AtTypes(
+                unknown = intConst(cl, "ATTYPEUNKNOWN", 0),
+                all = intConst(cl, "ATTYPEALL", FALLBACK_ATTYPE_ALL),
+                one = intConst(cl, "ATTYPEONE", FALLBACK_ATTYPE_ONE),
+                me = intConst(cl, "ATTYPEME", FALLBACK_ATTYPE_ME),
+            )
+        } catch (_: Throwable) {
+            AtTypes(
+                unknown = 0,
+                all = FALLBACK_ATTYPE_ALL,
+                one = FALLBACK_ATTYPE_ONE,
+                me = FALLBACK_ATTYPE_ME,
+            )
+        }
+    }
+
+    private fun intConst(cl: Class<*>, name: String, fallback: Int): Int {
+        return try {
+            cl.getField(name).getInt(null)
+        } catch (_: Throwable) {
+            try {
+                val f = cl.getDeclaredField(name)
+                f.isAccessible = true
+                f.getInt(null)
+            } catch (_: Throwable) {
+                fallback
+            }
+        }
+    }
+
     private fun field(obj: Any, name: String): Any? {
         var cur: Class<*>? = obj.javaClass
         while (cur != null && cur != Any::class.java) {
@@ -223,6 +329,9 @@ class RecvDispatcher(
     companion object {
         const val CHAT_TYPE_C2C = 1
         const val CHAT_TYPE_GROUP = 2
+        const val FALLBACK_ATTYPE_ALL = 1
+        const val FALLBACK_ATTYPE_ONE = 2
+        const val FALLBACK_ATTYPE_ME = 3
         @JvmField
         val installedHooks = AtomicBoolean(false)
     }

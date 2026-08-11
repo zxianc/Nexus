@@ -5,6 +5,7 @@ import com.nexus.tim.bridge.state.BridgeState
 import com.nexus.tim.bridge.state.ChatInfo
 import com.nexus.tim.bridge.state.ContactInfo
 import com.nexus.tim.bridge.state.MeInfo
+import com.nexus.tim.bridge.state.MemberInfo
 import com.nexus.tim.bridge.store.BridgeEvent
 import com.nexus.tim.bridge.store.EventStore
 import com.nexus.tim.protocol.TimFrame
@@ -24,6 +25,12 @@ data class SendResult(
     val error: String? = null,
 )
 
+data class MembersResult(
+    val ok: Boolean,
+    val members: List<MemberInfo> = emptyList(),
+    val error: String? = null,
+)
+
 class HookSession(
     private val state: BridgeState,
     private val eventStore: EventStore,
@@ -37,6 +44,7 @@ class HookSession(
 
     private var wasConnected = false
     private val pending = ConcurrentHashMap<String, CompletableFuture<SendResult>>()
+    private val pendingMembers = ConcurrentHashMap<String, CompletableFuture<MembersResult>>()
 
     fun onConnected() {
         wasConnected = true
@@ -51,11 +59,16 @@ class HookSession(
         state.recvHook = false
         state.me = MeInfo()
         state.contacts = emptyList()
+        // Drop groups (and any cached members).
         state.groups = emptyList()
         pending.forEach { (_, fut) ->
             fut.complete(SendResult(ok = false, error = "hook_disconnected"))
         }
         pending.clear()
+        pendingMembers.forEach { (_, fut) ->
+            fut.complete(MembersResult(ok = false, error = "hook_disconnected"))
+        }
+        pendingMembers.clear()
         if (hadHook) {
             wasConnected = false
             outbound?.alert("hook_disconnected", "TIM hook disconnected")
@@ -68,13 +81,49 @@ class HookSession(
         when (type) {
             TimFrameTypes.HELLO -> handleHello(text)
             TimFrameTypes.SEND_RESULT -> handleSendResult(text)
+            TimFrameTypes.LIST_MEMBERS_RESULT -> handleMembersResult(text)
             TimFrameTypes.MSG_IN -> handleMsgIn(text)
             TimFrameTypes.PING -> writeType(TimFrameTypes.PONG, ByteArray(0))
             else -> Unit
         }
     }
 
-    fun requestSendText(chatId: String, text: String, timeoutMs: Long = 15_000): SendResult {
+    fun requestSendText(
+        chatId: String,
+        text: String,
+        ats: List<String> = emptyList(),
+        timeoutMs: Long = 15_000,
+    ): SendResult {
+        val body = JSONObject()
+            .put(TimMsgFields.CHAT_ID, chatId)
+            .put(TimMsgFields.TEXT, text)
+            .put(TimMsgFields.ATS, JSONArray(ats))
+        return requestSend(TimFrameTypes.SEND_TEXT, body, timeoutMs)
+    }
+
+    fun requestSendMedia(
+        chatId: String,
+        kind: String,
+        path: String,
+        name: String,
+        mediaId: String = "",
+        dataB64: String = "",
+        original: Boolean = true,
+        timeoutMs: Long = 60_000,
+    ): SendResult {
+        val type = if (kind == "image") TimFrameTypes.SEND_IMAGE else TimFrameTypes.SEND_FILE
+        val body = JSONObject()
+            .put(TimMsgFields.CHAT_ID, chatId)
+            .put(TimMsgFields.PATH, path)
+            .put(TimMsgFields.NAME, name)
+            .put(TimMsgFields.KIND, kind)
+            .put(TimMsgFields.MEDIA_ID, mediaId)
+            .put(TimMsgFields.DATA_B64, dataB64)
+            .put(TimMsgFields.ORIGINAL, original)
+        return requestSend(type, body, timeoutMs)
+    }
+
+    private fun requestSend(type: Int, body: JSONObject, timeoutMs: Long): SendResult {
         if (!state.hookConnected || writer == null) {
             return SendResult(ok = false, error = "hook_disconnected")
         }
@@ -84,12 +133,9 @@ class HookSession(
         val requestId = UUID.randomUUID().toString()
         val fut = CompletableFuture<SendResult>()
         pending[requestId] = fut
-        val body = JSONObject()
-            .put(TimMsgFields.REQUEST_ID, requestId)
-            .put(TimMsgFields.CHAT_ID, chatId)
-            .put(TimMsgFields.TEXT, text)
+        body.put(TimMsgFields.REQUEST_ID, requestId)
         try {
-            writeType(TimFrameTypes.SEND_TEXT, body.toString().toByteArray())
+            writeType(type, body.toString().toByteArray())
             return fut.get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: TimeoutException) {
             pending.remove(requestId)
@@ -97,6 +143,28 @@ class HookSession(
         } catch (t: Throwable) {
             pending.remove(requestId)
             return SendResult(ok = false, error = t.message ?: "send_failed")
+        }
+    }
+
+    fun requestMembers(chatId: String, timeoutMs: Long = 15_000): MembersResult {
+        if (!state.hookConnected || writer == null) {
+            return MembersResult(ok = false, error = "hook_disconnected")
+        }
+        val requestId = UUID.randomUUID().toString()
+        val fut = CompletableFuture<MembersResult>()
+        pendingMembers[requestId] = fut
+        val body = JSONObject()
+            .put(TimMsgFields.REQUEST_ID, requestId)
+            .put(TimMsgFields.CHAT_ID, chatId)
+        try {
+            writeType(TimFrameTypes.LIST_MEMBERS, body.toString().toByteArray())
+            return fut.get(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (_: TimeoutException) {
+            pendingMembers.remove(requestId)
+            return MembersResult(ok = false, error = "timeout")
+        } catch (t: Throwable) {
+            pendingMembers.remove(requestId)
+            return MembersResult(ok = false, error = t.message ?: "members_failed")
         }
     }
 
@@ -112,7 +180,10 @@ class HookSession(
             nick = json.optString(TimMsgFields.NICK, ""),
         )
         state.contacts = parseContacts(json.optJSONArray(TimMsgFields.CONTACTS))
-        state.groups = parseGroups(json.optJSONArray(TimMsgFields.GROUPS))
+        state.groups = mergeGroupsPreservingMembers(
+            parseGroups(json.optJSONArray(TimMsgFields.GROUPS)),
+            state.groups,
+        )
         val ver = state.timVersion
         if (ver != null && ver != state.supportedVersion) {
             outbound?.alert(
@@ -161,6 +232,19 @@ class HookSession(
         return out
     }
 
+    /** HELLO group refresh must not drop on-demand member caches. */
+    private fun mergeGroupsPreservingMembers(
+        incoming: List<ChatInfo>,
+        previous: List<ChatInfo>,
+    ): List<ChatInfo> {
+        if (previous.isEmpty() || incoming.isEmpty()) return incoming
+        val prevMembers = previous.associate { it.chatId to it.members }
+        return incoming.map { g ->
+            val cached = prevMembers[g.chatId]
+            if (cached.isNullOrEmpty()) g else g.copy(members = cached)
+        }
+    }
+
     private fun handleSendResult(text: String) {
         val json = JSONObject(text)
         val requestId = json.optString(TimMsgFields.REQUEST_ID, "")
@@ -181,6 +265,39 @@ class HookSession(
                 JSONObject().put("error", error).put("request_id", requestId),
             )
         }
+    }
+
+    private fun handleMembersResult(text: String) {
+        val json = JSONObject(text)
+        val requestId = json.optString(TimMsgFields.REQUEST_ID, "")
+        val chatId = json.optString(TimMsgFields.CHAT_ID, "")
+        val fut = pendingMembers.remove(requestId) ?: return
+        val error = json.optString(TimMsgFields.ERROR).ifEmpty { null }
+        val ok = json.optBoolean(TimMsgFields.OK, false)
+        val members = parseMembers(json.optJSONArray(TimMsgFields.MEMBERS))
+        if (ok && chatId.isNotEmpty() && members.isNotEmpty()) {
+            state.groups = state.groups.map { g ->
+                if (g.chatId == chatId) g.copy(members = members) else g
+            }
+        }
+        fut.complete(MembersResult(ok = ok, members = members, error = error))
+    }
+
+    private fun parseMembers(arr: JSONArray?): List<MemberInfo> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<MemberInfo>(arr.length())
+        for (i in 0 until arr.length()) {
+            val m = arr.optJSONObject(i) ?: continue
+            val userId = m.optString(TimMsgFields.USER_ID, "")
+            if (userId.isEmpty()) continue
+            out.add(
+                MemberInfo(
+                    userId = userId,
+                    display = m.optString(TimMsgFields.DISPLAY, userId),
+                ),
+            )
+        }
+        return out
     }
 
     private fun handleMsgIn(text: String) {

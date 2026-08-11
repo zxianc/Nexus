@@ -60,3 +60,26 @@ Groups:
 2. `addKernelGroupListener` → `getGroupList(false/true, cb)` → `onGroupListUpdate(type, ArrayList<GroupSimpleInfo>)`
    - `groupCode` → `chat_id=troop:<code>`；title = `remarkName` ?: `groupName`
 3. Fallback: `ITroopManageService` EntityManager `query(TroopInfo.class)` (`troopuin` / `troopname`)
+
+## Group members (`LIST_MEMBERS` → `/v1/chats/{id}/members`)
+
+1. Unwrap `BaseService.service` → native `IKernelGroupService`
+2. `getAllMemberList(groupCode, force, IGroupMemberListCallback)`
+3. `GroupMemberListResult.infos` → `MemberInfo` (`uin` / `uid` / `cardName` / `remark` / `nick`)
+4. uid→uin via `IRelationNTUinAndUidApi`
+
+## Group @
+
+**Send:** `IMsgUtilApi.createAtTextElement(display, ntUidOrEmpty, atType)` then `createTextElement(text)` → `sendMsg`  
+- `MsgConstant.ATTYPEALL` / `ATTYPEONE`（fallback 1 / 2）  
+- API `ats`: QQ digits or `notify@all`
+
+**Recv:** parse `TextElement.atType` / `atNtUid` / `atUid` → `MSG_IN` fields `ats` / `at_me` / `at_all`
+
+## Send image
+
+1. Bridge stages under `/data/local/tmp/nexus_tim` (+ `data_b64` fallback)
+2. `IMsgUtilApi.createPicElement(path, original, compressType)` — TIM: `original=true` → `compressType=0`
+3. `IMsgService.sendMsg`（同文本）
+
+Recv image / `MEDIA_READY`：**未做**.

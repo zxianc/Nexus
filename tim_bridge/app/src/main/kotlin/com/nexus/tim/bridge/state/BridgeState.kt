@@ -10,10 +10,16 @@ data class ContactInfo(
     val display: String,
 )
 
+data class MemberInfo(
+    val userId: String,
+    val display: String,
+)
+
 data class ChatInfo(
     val chatId: String,
     val title: String,
     val isGroup: Boolean,
+    val members: List<MemberInfo> = emptyList(),
 )
 
 data class BridgeState(
@@ -25,9 +31,12 @@ data class BridgeState(
     @Volatile var me: MeInfo = MeInfo(),
     /** Full friends from HELLO. */
     @Volatile var contacts: List<ContactInfo> = emptyList(),
-    /** Full groups from HELLO. */
+    /** Full groups from HELLO; members filled on demand. */
     @Volatile var groups: List<ChatInfo> = emptyList(),
 ) {
+    fun membersOf(chatId: String): List<MemberInfo> =
+        groups.firstOrNull { it.chatId == chatId }?.members.orEmpty()
+
     companion object {
         const val DEFAULT_SUPPORTED_VERSION = "4.1.0"
     }

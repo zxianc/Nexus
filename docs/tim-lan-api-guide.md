@@ -105,9 +105,20 @@ curl http://127.0.0.1:8788/v1/groups
 
 ---
 
-## 5. 收发验收
+## 5. 群成员
 
-### 发文本
+```bash
+curl http://127.0.0.1:8788/v1/chats/troop:723765339/members
+# {"ok":true,"chat_id":"troop:723765339","members":[{"user_id":"...","display":"..."}, ...]}
+```
+
+按需向 Hook 拉取（`getAllMemberList`），Bridge 侧缓存。
+
+---
+
+## 6. 收发验收
+
+### 发文本 / 群 @
 
 ```bash
 # 好友
@@ -115,13 +126,25 @@ curl -X POST http://127.0.0.1:8788/v1/messages/text \
   -H "Content-Type: application/json" \
   -d "{\"chat_id\":\"好友QQ\",\"text\":\"hi from tim bridge\"}"
 
-# 群
+# 群 @ 单人 / @所有人
 curl -X POST http://127.0.0.1:8788/v1/messages/text \
   -H "Content-Type: application/json" \
-  -d "{\"chat_id\":\"troop:群号\",\"text\":\"hi group\"}"
+  -d "{\"chat_id\":\"troop:群号\",\"text\":\"ping\",\"ats\":[\"95019432\"]}"
+
+curl -X POST http://127.0.0.1:8788/v1/messages/text \
+  -H "Content-Type: application/json" \
+  -d "{\"chat_id\":\"troop:群号\",\"text\":\"注意\",\"ats\":[\"notify@all\"]}"
 ```
 
-### 收文本
+### 发图
+
+```bash
+curl -X POST http://127.0.0.1:8788/v1/messages/image \
+  -F chat_id=好友QQ \
+  -F file=@/path/to/test.jpg
+```
+
+### 收文本 / @
 
 对方发消息后：
 
@@ -129,11 +152,11 @@ curl -X POST http://127.0.0.1:8788/v1/messages/text \
 curl "http://127.0.0.1:8788/v1/events?after=0"
 ```
 
-`payload` 含 `chat_id` / `text` / `from_id` / `is_group` 等（见 API.md）。
+`payload` 含 `chat_id` / `text` / `from_id` / `is_group`，群消息另有 `ats` / `at_me` / `at_all`（见 API.md）。收图未做。
 
 ---
 
-## 6. Redis / Webhook / Token（P2）
+## 7. Redis / Webhook / Token（P2）
 
 在 Bridge App **Settings** 中配置并 **Save settings**：
 
@@ -151,7 +174,7 @@ redis-cli XREAD COUNT 10 BLOCK 5000 STREAMS nexus:tim:events $
 
 ---
 
-## 7. 与微信栈差距（对齐进度）
+## 8. 与微信栈差距（对齐进度）
 
 | 能力 | 微信 | TIM |
 |------|------|-----|
@@ -160,14 +183,16 @@ redis-cli XREAD COUNT 10 BLOCK 5000 STREAMS nexus:tim:events $
 | Compose Bridge UI | ✓ | ✓（已对齐） |
 | contacts / groups API | ✓ | ✓ |
 | chats（最近会话） | ✓ | ✗ |
-| 群成员 / 群 @ | ✓ | ✗ |
-| 图片收发 / MEDIA_READY | ✓ | ✗ |
+| 群成员 | ✓ | ✓ |
+| 群 @ 收发 | ✓ | ✓ |
+| 发图 | ✓ | ✓ |
+| 收图 / MEDIA_READY | ✓ | ✗ |
 | HELLO 同步通讯录 | ✓ | ✓（contacts + groups） |
 | filehelper | ✓ | 不适用 |
 
 ---
 
-## 8. 常见问题
+## 9. 常见问题
 
 | 现象 | 处理 |
 |------|------|

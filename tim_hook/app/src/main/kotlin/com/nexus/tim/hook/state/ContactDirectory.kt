@@ -33,6 +33,9 @@ class ContactDirectory(
     @Volatile
     private var lastGroupsAtMs: Long = 0L
 
+    private val membersCache = HashMap<String, Pair<Long, JSONArray>>()
+    private val membersCacheLock = Any()
+
     fun listContacts(selfId: String = "", limit: Int = 2000): JSONArray {
         val now = System.currentTimeMillis()
         if (lastContacts.length() > 0 && now - lastContactsAtMs < REFRESH_TTL_MS) {
@@ -74,6 +77,74 @@ class ContactDirectory(
         } catch (t: Throwable) {
             Log.w(MainHook.TAG, "listGroups failed: ${t.message}")
             lastGroups
+        }
+    }
+
+    /**
+     * On-demand troop members. [chatIdOrTroop] accepts `troop:uin`, `g:uin`, or bare digits.
+     */
+    /** Cache-only peek (safe on main; never blocks waiting for kernel). */
+    fun peekMembersCached(chatIdOrTroop: String): JSONArray {
+        val troopUin = parseTroopUin(chatIdOrTroop)
+        if (!troopUin.matches(UIN_RE)) return JSONArray()
+        synchronized(membersCacheLock) {
+            return membersCache[troopUin]?.second ?: JSONArray()
+        }
+    }
+
+    fun listMembers(chatIdOrTroop: String, limit: Int = 2000): JSONArray {
+        val troopUin = parseTroopUin(chatIdOrTroop)
+        if (!troopUin.matches(UIN_RE)) {
+            Log.w(MainHook.TAG, "listMembers bad troop: $chatIdOrTroop")
+            return JSONArray()
+        }
+        val now = System.currentTimeMillis()
+        synchronized(membersCacheLock) {
+            val hit = membersCache[troopUin]
+            if (hit != null && now - hit.first < REFRESH_TTL_MS && hit.second.length() > 0) {
+                return hit.second
+            }
+        }
+        return try {
+            val arr = membersFromKernel(troopUin, limit)
+            if (arr.length() > 0) {
+                synchronized(membersCacheLock) {
+                    membersCache[troopUin] = now to arr
+                }
+            }
+            arr
+        } catch (t: Throwable) {
+            Log.w(MainHook.TAG, "listMembers failed troop=$troopUin: ${t.message}")
+            synchronized(membersCacheLock) {
+                membersCache[troopUin]?.second ?: JSONArray()
+            }
+        }
+    }
+
+    fun listMembersResult(
+        requestId: String,
+        chatId: String,
+        membersArr: JSONArray,
+        error: String? = null,
+    ): JSONObject {
+        val ok = error.isNullOrBlank()
+        val body = JSONObject()
+            .put(TimMsgFields.REQUEST_ID, requestId)
+            .put(TimMsgFields.CHAT_ID, chatId)
+            .put(TimMsgFields.OK, ok)
+            .put(TimMsgFields.MEMBERS, membersArr)
+        if (!error.isNullOrBlank()) {
+            body.put(TimMsgFields.ERROR, error)
+        }
+        return body
+    }
+
+    fun parseTroopUin(chatIdOrTroop: String): String {
+        val t = chatIdOrTroop.trim()
+        return when {
+            t.startsWith("troop:", ignoreCase = true) -> t.substringAfter(':').trim()
+            t.startsWith("g:", ignoreCase = true) -> t.substringAfter(':').trim()
+            else -> t
         }
     }
 
@@ -269,6 +340,223 @@ class ContactDirectory(
             )
         }
         return arr
+    }
+
+    private fun membersFromKernel(troopUin: String, limit: Int): JSONArray {
+        val kernel = runtimeService("com.tencent.qqnt.kernel.api.IKernelService")
+            ?: error("no_IKernelService")
+        val getGroupService = kernel.javaClass.methods.firstOrNull {
+            it.name == "getGroupService" && it.parameterTypes.isEmpty()
+        } ?: error("no_getGroupService")
+        val groupWrapper = getGroupService.invoke(kernel) ?: error("groupService_null")
+        val nativeSvc = unwrapBaseService(groupWrapper)
+        val getAll = findGetAllMemberList(groupWrapper) ?: findGetAllMemberList(nativeSvc)
+            ?: error("no_getAllMemberList")
+        val callTarget = if (findGetAllMemberList(groupWrapper) != null) groupWrapper else nativeSvc
+
+        val cbCl = classLoader.loadClass(
+            "com.tencent.qqnt.kernel.nativeinterface.IGroupMemberListCallback",
+        )
+        val box = AtomicReference<Any?>(null)
+        val errBox = AtomicReference<String?>(null)
+        val latch = CountDownLatch(1)
+        val callback = Proxy.newProxyInstance(classLoader, arrayOf(cbCl)) { _, method, args ->
+            if (method.name == "onResult" && args != null && args.isNotEmpty()) {
+                val code = (args[0] as? Number)?.toInt() ?: -1
+                val errMsg = (args.getOrNull(1) as? String)?.trim().orEmpty()
+                val result = args.getOrNull(2)
+                if (code != 0) {
+                    errBox.set(errMsg.ifEmpty { "member_list_code_$code" })
+                } else {
+                    box.set(result)
+                }
+                latch.countDown()
+            }
+            null
+        }
+
+        val troopLong = troopUin.toLongOrNull() ?: error("bad_troop_uin")
+        // Register/call on main; await callback off main (same as groupsFromKernel).
+        TimRuntime.onMain(timeoutMs = 3_000) {
+            invokeGetAllMemberList(getAll, callTarget, troopLong, callback)
+        }
+        if (!latch.await(8, TimeUnit.SECONDS)) {
+            error("member_list_timeout")
+        }
+        errBox.get()?.let { error(it) }
+        val result = box.get() ?: return JSONArray()
+        return memberResultToArray(result, limit)
+    }
+
+    private fun memberResultToArray(result: Any, limit: Int): JSONArray {
+        val relation = qrouteApi("com.tencent.relation.common.api.IRelationNTUinAndUidApi")
+        val infos = memberInfosMap(result)
+        val ids = memberIdsList(result)
+        val arr = JSONArray()
+        val seen = HashSet<String>()
+
+        fun putMember(info: Any?) {
+            if (info == null || arr.length() >= limit) return
+            val uid = stringField(info, "uid")
+                .ifEmpty { stringGetter(info, "getUid") }
+            var uin = longField(info, "uin")
+                .ifEmpty { stringField(info, "uin") }
+                .ifEmpty { stringGetter(info, "getUin") }
+            if (!uin.matches(UIN_RE) && uid.isNotEmpty()) {
+                uin = uidToUin(relation, uid)
+            }
+            if (!uin.matches(UIN_RE)) return
+            if (!seen.add(uin)) return
+            val card = stringField(info, "cardName")
+                .ifEmpty { stringGetter(info, "getCardName") }
+            val remark = stringField(info, "remark")
+                .ifEmpty { stringGetter(info, "getRemark") }
+            val nick = stringField(info, "nick")
+                .ifEmpty { stringField(info, "nickName") }
+                .ifEmpty { stringGetter(info, "getNick") }
+                .ifEmpty { stringGetter(info, "getNickName") }
+            val display = card.ifEmpty { remark }.ifEmpty { nick }.ifEmpty { uin }
+            arr.put(
+                JSONObject()
+                    .put(TimMsgFields.USER_ID, uin)
+                    .put(TimMsgFields.DISPLAY, display),
+            )
+        }
+
+        if (ids.isNotEmpty()) {
+            for (id in ids) {
+                if (arr.length() >= limit) break
+                when (id) {
+                    null -> Unit
+                    is String -> {
+                        val info = infos[id] ?: infos.values.firstOrNull { candidate ->
+                            candidate != null &&
+                                (stringField(candidate, "uid") == id || stringField(candidate, "uin") == id)
+                        }
+                        if (info != null) {
+                            putMember(info)
+                        } else {
+                            val uin = if (id.matches(UIN_RE)) id else uidToUin(relation, id)
+                            if (uin.matches(UIN_RE) && seen.add(uin)) {
+                                arr.put(
+                                    JSONObject()
+                                        .put(TimMsgFields.USER_ID, uin)
+                                        .put(TimMsgFields.DISPLAY, uin),
+                                )
+                            }
+                        }
+                    }
+                    else -> {
+                        val key = stringField(id, "uid")
+                            .ifEmpty { stringField(id, "uin") }
+                            .ifEmpty { id.toString() }
+                        putMember(infos[key] ?: id)
+                    }
+                }
+            }
+        } else {
+            for (info in infos.values) {
+                if (arr.length() >= limit) break
+                putMember(info)
+            }
+        }
+        Log.i(MainHook.TAG, "members via getAllMemberList n=${arr.length()} infos=${infos.size} ids=${ids.size}")
+        return arr
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun memberInfosMap(result: Any): Map<String, Any?> {
+        val raw = anyField(result, "infos")
+            ?: try {
+                result.javaClass.methods.firstOrNull {
+                    it.name == "getInfos" && it.parameterTypes.isEmpty()
+                }?.invoke(result)
+            } catch (_: Throwable) {
+                null
+            }
+        return when (raw) {
+            is Map<*, *> -> {
+                val out = LinkedHashMap<String, Any?>()
+                for ((k, v) in raw) {
+                    if (k != null) out[k.toString()] = v
+                }
+                out
+            }
+            else -> emptyMap()
+        }
+    }
+
+    private fun memberIdsList(result: Any): List<*> {
+        val raw = anyField(result, "ids")
+            ?: try {
+                result.javaClass.methods.firstOrNull {
+                    it.name == "getIds" && it.parameterTypes.isEmpty()
+                }?.invoke(result)
+            } catch (_: Throwable) {
+                null
+            }
+        return when (raw) {
+            is List<*> -> raw
+            is Collection<*> -> raw.toList()
+            else -> emptyList<Any>()
+        }
+    }
+
+    private fun anyField(obj: Any, name: String): Any? {
+        var cur: Class<*>? = obj.javaClass
+        while (cur != null && cur != Any::class.java) {
+            try {
+                val f = cur.getDeclaredField(name)
+                f.isAccessible = true
+                return f.get(obj)
+            } catch (_: Throwable) {
+            }
+            cur = cur.superclass
+        }
+        return null
+    }
+
+    private fun findGetAllMemberList(obj: Any): java.lang.reflect.Method? {
+        return obj.javaClass.methods.firstOrNull { m ->
+            if (m.name != "getAllMemberList") return@firstOrNull false
+            val p = m.parameterTypes
+            // Prefer (J Z IGroupMemberListCallback)V — troopUin, force, callback
+            if (p.size == 3 &&
+                (p[0] == Long::class.javaPrimitiveType || p[0] == java.lang.Long::class.java) &&
+                (p[1] == Boolean::class.javaPrimitiveType || p[1] == java.lang.Boolean::class.java)
+            ) {
+                return@firstOrNull true
+            }
+            // (long, callback) or (String, callback) variants
+            if (p.size == 2) return@firstOrNull true
+            false
+        }
+    }
+
+    private fun invokeGetAllMemberList(
+        method: java.lang.reflect.Method,
+        target: Any,
+        troopUin: Long,
+        callback: Any,
+    ) {
+        val p = method.parameterTypes
+        when {
+            p.size == 3 &&
+                (p[0] == Long::class.javaPrimitiveType || p[0] == java.lang.Long::class.java) -> {
+                method.invoke(target, troopUin, false, callback)
+            }
+            p.size == 3 && p[0] == String::class.java -> {
+                method.invoke(target, troopUin.toString(), false, callback)
+            }
+            p.size == 2 &&
+                (p[0] == Long::class.javaPrimitiveType || p[0] == java.lang.Long::class.java) -> {
+                method.invoke(target, troopUin, callback)
+            }
+            p.size == 2 && p[0] == String::class.java -> {
+                method.invoke(target, troopUin.toString(), callback)
+            }
+            else -> error("unsupported getAllMemberList sig=${method.toGenericString()}")
+        }
     }
 
     private fun groupsFromTroopEntity(limit: Int): JSONArray {

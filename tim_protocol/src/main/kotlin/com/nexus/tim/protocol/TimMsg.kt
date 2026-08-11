@@ -5,6 +5,12 @@ object TimMsgFields {
     const val REQUEST_ID = "request_id"
     const val CHAT_ID = "chat_id"
     const val TEXT = "text"
+    /** Group @ QQ numbers / notify@all (send + MSG_IN). */
+    const val ATS = "ats"
+    /** True when this message @'s the logged-in account (or at_all). */
+    const val AT_ME = "at_me"
+    /** True when message includes @all / notify@all. */
+    const val AT_ALL = "at_all"
     const val OK = "ok"
     const val MSG_ID = "msg_id"
     const val ERROR = "error"
@@ -25,4 +31,14 @@ object TimMsgFields {
     const val CONTACTS = "contacts"
     /** Full group list (HELLO / GET /v1/groups). */
     const val GROUPS = "groups"
+
+    /** Outgoing / staged media id (HTTP + SEND_IMAGE). */
+    const val MEDIA_ID = "media_id"
+    const val MEDIA_KIND = "media_kind"
+    const val PATH = "path"
+    const val NAME = "name"
+    const val KIND = "kind"
+    const val DATA_B64 = "data_b64"
+    /** Prefer original / less-compressed image when true. */
+    const val ORIGINAL = "original"
 }

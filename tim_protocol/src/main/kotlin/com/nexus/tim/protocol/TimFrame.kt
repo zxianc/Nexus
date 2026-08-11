@@ -13,6 +13,8 @@ object TimFrameTypes {
     const val MEDIA_READY = 7
     const val PING = 8
     const val PONG = 9
+    const val LIST_MEMBERS = 10
+    const val LIST_MEMBERS_RESULT = 11
 }
 
 data class DecodedFrame(

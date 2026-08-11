@@ -11,11 +11,27 @@ class SendQueue(
     private val session: HookSession,
     private val intervalMs: Long = DEFAULT_INTERVAL_MS,
 ) {
-    private data class Job(
-        val chatId: String,
-        val text: String,
-        val result: CompletableFuture<SendResult>,
-    )
+    private sealed class Job {
+        abstract val result: CompletableFuture<SendResult>
+
+        data class Text(
+            val chatId: String,
+            val text: String,
+            val ats: List<String>,
+            override val result: CompletableFuture<SendResult>,
+        ) : Job()
+
+        data class Media(
+            val chatId: String,
+            val kind: String,
+            val path: String,
+            val name: String,
+            val mediaId: String,
+            val dataB64: String,
+            val original: Boolean,
+            override val result: CompletableFuture<SendResult>,
+        ) : Job()
+    }
 
     private val queue = LinkedBlockingQueue<Job>()
     private val executor = Executors.newSingleThreadExecutor { r ->
@@ -30,7 +46,13 @@ class SendQueue(
                 } catch (_: InterruptedException) {
                     break
                 }
-                job.result.complete(session.requestSendText(job.chatId, job.text))
+                val r = when (job) {
+                    is Job.Text -> session.requestSendText(job.chatId, job.text, job.ats)
+                    is Job.Media -> session.requestSendMedia(
+                        job.chatId, job.kind, job.path, job.name, job.mediaId, job.dataB64, job.original,
+                    )
+                }
+                job.result.complete(r)
                 try {
                     Thread.sleep(intervalMs)
                 } catch (_: InterruptedException) {
@@ -40,9 +62,23 @@ class SendQueue(
         }
     }
 
-    fun enqueueText(chatId: String, text: String): CompletableFuture<SendResult> {
+    fun enqueueText(chatId: String, text: String, ats: List<String> = emptyList()): CompletableFuture<SendResult> {
         val fut = CompletableFuture<SendResult>()
-        queue.offer(Job(chatId, text, fut))
+        queue.offer(Job.Text(chatId, text, ats, fut))
+        return fut
+    }
+
+    fun enqueueMedia(
+        chatId: String,
+        kind: String,
+        path: String,
+        name: String,
+        mediaId: String = "",
+        dataB64: String = "",
+        original: Boolean = true,
+    ): CompletableFuture<SendResult> {
+        val fut = CompletableFuture<SendResult>()
+        queue.offer(Job.Media(chatId, kind, path, name, mediaId, dataB64, original, fut))
         return fut
     }
 

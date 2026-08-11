@@ -2,6 +2,8 @@ package com.nexus.tim.bridge.http
 
 import android.util.Log
 import fi.iki.elonen.NanoHTTPD
+import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.IOException
 
 class TimHttpServer(
@@ -17,7 +19,32 @@ class TimHttpServer(
     }
 
     override fun serve(session: IHTTPSession): Response {
-        val body = readBody(session)
+        val contentType = session.headers["content-type"].orEmpty()
+        val form = HashMap<String, String>()
+        val files = HashMap<String, File>()
+        var body: ByteArray? = null
+
+        if (contentType.contains("multipart/form-data", ignoreCase = true)) {
+            val fileMap = HashMap<String, String>()
+            try {
+                session.parseBody(fileMap)
+            } catch (e: Exception) {
+                Log.w(TAG, "multipart parse failed", e)
+                return newFixedLengthResponse(
+                    Response.Status.BAD_REQUEST,
+                    "application/json; charset=utf-8",
+                    """{"ok":false,"error":"multipart_parse_failed"}""",
+                )
+            }
+            session.parms?.let { form.putAll(it) }
+            for ((key, path) in fileMap) {
+                files[key] = File(path)
+            }
+        } else {
+            body = readBody(session)
+            session.parms?.let { form.putAll(it) }
+        }
+
         val query = HashMap<String, String>()
         session.parms?.let { query.putAll(it) }
         val headers = HashMap<String, String>()
@@ -27,12 +54,32 @@ class TimHttpServer(
             path = session.uri,
             query = query,
             body = body,
+            form = form,
+            files = files,
             headers = headers,
         )
+        return toResponse(result)
+    }
+
+    private fun toResponse(result: RouterResponse): Response {
         val status = Response.Status.lookup(result.status) ?: Response.Status.INTERNAL_ERROR
+        if (result.bytes != null) {
+            val stream = ByteArrayInputStream(result.bytes)
+            val resp = newFixedLengthResponse(
+                status,
+                result.contentType,
+                stream,
+                result.bytes.size.toLong(),
+            )
+            val name = result.fileName
+            if (!name.isNullOrEmpty()) {
+                resp.addHeader("Content-Disposition", "attachment; filename=\"$name\"")
+            }
+            return resp
+        }
         return newFixedLengthResponse(
             status,
-            "application/json; charset=utf-8",
+            result.contentType,
             result.json?.toString() ?: """{"ok":false,"error":"empty"}""",
         )
     }
