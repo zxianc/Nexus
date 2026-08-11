@@ -164,6 +164,8 @@ private fun BridgeScreen(
                 me = state.me.userId.ifEmpty { "—" },
                 version = state.timVersion ?: "—",
                 recvHook = if (state.recvHook) "yes" else "no",
+                contacts = state.contacts.size,
+                groups = state.groups.size,
                 authHint = when {
                     !cfg.apiAuthEnabled -> "API auth: off"
                     cfg.apiAuthReady -> "API auth: on"
@@ -361,6 +363,8 @@ private fun StatusCard(
     me: String,
     version: String,
     recvHook: String,
+    contacts: Int,
+    groups: Int,
     authHint: String,
     redisHint: String,
     tick: Int,
@@ -378,6 +382,7 @@ private fun StatusCard(
             Text("Me: $me")
             Text("TIM: $version")
             Text("Recv hook: $recvHook")
+            Text("Contacts $contacts · Groups $groups")
             Text(text = authHint, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)
             key(tick) {
                 Text(text = redisHint, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.bodySmall)

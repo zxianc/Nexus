@@ -6,12 +6,14 @@ import android.util.Log
 import com.nexus.tim.hook.MainHook
 import com.nexus.tim.hook.recv.RecvDispatcher
 import com.nexus.tim.hook.send.SendDispatcher
+import com.nexus.tim.hook.state.ContactDirectory
 import com.nexus.tim.hook.state.LoginProbe
 import com.nexus.tim.hook.version.SupportedTim
 import com.nexus.tim.protocol.TimFrame
 import com.nexus.tim.protocol.TimFrameTypes
 import com.nexus.tim.protocol.TimIpc
 import com.nexus.tim.protocol.TimMsgFields
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -22,6 +24,7 @@ class BridgeUdsClient(
     private val appContextProvider: () -> Context?,
     private val loginProbe: LoginProbe,
     private val hostClassLoader: ClassLoader,
+    private val contacts: ContactDirectory,
 ) : Runnable {
     private val liveSocket = AtomicReference<Socket?>(null)
     private val pendingEmit = ArrayDeque<Pair<Int, ByteArray>>()
@@ -152,16 +155,22 @@ class BridgeUdsClient(
         val appContext = appContextProvider()
         val snap = loginProbe.probe(appContext)
         val version = resolveVersionName(appContext)
+        val contactList = if (snap.loggedIn) contacts.listContacts(selfId = snap.userId) else JSONArray()
+        val groups = if (snap.loggedIn) contacts.listGroups() else JSONArray()
         val body = JSONObject()
             .put(TimMsgFields.TIM_VERSION, version)
             .put(TimMsgFields.LOGGED_IN, snap.loggedIn)
             .put(TimMsgFields.USER_ID, snap.userId)
             .put(TimMsgFields.NICK, snap.nick)
             .put("recv_hook", RecvDispatcher.installedHooks.get())
+            .put(TimMsgFields.CONTACTS, contactList)
+            .put(TimMsgFields.GROUPS, groups)
         write(sock, TimFrameTypes.HELLO, body.toString().toByteArray())
         Log.e(
             MainHook.TAG,
-            "HELLO version=$version loggedIn=${snap.loggedIn} uin=${snap.userId} recv=${RecvDispatcher.installedHooks.get()}",
+            "HELLO version=$version loggedIn=${snap.loggedIn} uin=${snap.userId} " +
+                "recv=${RecvDispatcher.installedHooks.get()} " +
+                "contacts=${contactList.length()} groups=${groups.length()}",
         )
     }
 

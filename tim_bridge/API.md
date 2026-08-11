@@ -12,6 +12,8 @@ Debug AppId: `com.nexus.tim.bridge.debug`
 |--------|------|-------|
 | GET | `/v1/health` | `hook`, `tim_version`, `logged_in`, `user_id`, `recv_hook`（无需 Token） |
 | GET | `/v1/me` | uin / nick |
+| GET | `/v1/contacts` | 全部好友（`user_id` QQ 号 + `display` 备注/昵称） |
+| GET | `/v1/groups` | 全部群（`chat_id=troop:<群号>` + `title`） |
 | GET | `/v1/events?after=` | memory ring（约 200 条） |
 | POST | `/v1/messages/text` | JSON `chat_id` + `text` |
 
@@ -60,6 +62,8 @@ curl "http://127.0.0.1:8788/v1/events?after=0&token=<token>"
 
 ```bash
 adb forward tcp:8788 tcp:8788
+curl http://127.0.0.1:8788/v1/contacts
+curl http://127.0.0.1:8788/v1/groups
 curl "http://127.0.0.1:8788/v1/events?after=0"
 
 curl -X POST http://127.0.0.1:8788/v1/messages/text \

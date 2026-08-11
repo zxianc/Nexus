@@ -45,3 +45,18 @@ Parse `MsgRecord`: `chatType` 1/2, `peerUid`/`peerUin`, `senderUin`, `elements[]
 
 - Friend: QQ number digits, e.g. `123456`
 - Group: `troop:123456789` (troop uin)
+
+## Contacts / groups (HELLO → `/v1/contacts` `/v1/groups`)
+
+Friends (sync):
+
+1. `AppRuntime.getRuntimeService(IFriendDataService).getAllFriends()`
+   - fields: `uin` / `remark` / `name`
+2. Fallback: `QRoute.api(IQQFriendsInfoApi).getAllFriend(scene)` + `IRelationNTUinAndUidApi` uid→uin
+
+Groups:
+
+1. `IKernelService.getGroupService()`
+2. `addKernelGroupListener` → `getGroupList(false/true, cb)` → `onGroupListUpdate(type, ArrayList<GroupSimpleInfo>)`
+   - `groupCode` → `chat_id=troop:<code>`；title = `remarkName` ?: `groupName`
+3. Fallback: `ITroopManageService` EntityManager `query(TroopInfo.class)` (`troopuin` / `troopname`)

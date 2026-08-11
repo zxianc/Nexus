@@ -91,7 +91,21 @@ curl http://127.0.0.1:8788/v1/health
 
 ---
 
-## 4. 收发验收
+## 4. 通讯录 / 群列表
+
+HELLO 会周期性同步；Bridge UI 显示 `Contacts N · Groups M`。
+
+```bash
+curl http://127.0.0.1:8788/v1/contacts
+# {"ok":true,"contacts":[{"user_id":"95019432","display":"..."}, ...]}
+
+curl http://127.0.0.1:8788/v1/groups
+# {"ok":true,"groups":[{"chat_id":"troop:723765339","title":"...","is_group":true}, ...]}
+```
+
+---
+
+## 5. 收发验收
 
 ### 发文本
 
@@ -119,7 +133,7 @@ curl "http://127.0.0.1:8788/v1/events?after=0"
 
 ---
 
-## 5. Redis / Webhook / Token（P2）
+## 6. Redis / Webhook / Token（P2）
 
 在 Bridge App **Settings** 中配置并 **Save settings**：
 
@@ -137,22 +151,23 @@ redis-cli XREAD COUNT 10 BLOCK 5000 STREAMS nexus:tim:events $
 
 ---
 
-## 6. 与微信栈差距（对齐进度）
+## 7. 与微信栈差距（对齐进度）
 
 | 能力 | 微信 | TIM |
 |------|------|-----|
 | 文本收发 + events | ✓ | ✓ |
 | Redis / Webhook / Token | ✓ | ✓ |
 | Compose Bridge UI | ✓ | ✓（已对齐） |
-| chats / contacts / groups API | ✓ | ✗ |
+| contacts / groups API | ✓ | ✓ |
+| chats（最近会话） | ✓ | ✗ |
 | 群成员 / 群 @ | ✓ | ✗ |
 | 图片收发 / MEDIA_READY | ✓ | ✗ |
-| HELLO 同步通讯录 | ✓ | ✗（仅 me） |
+| HELLO 同步通讯录 | ✓ | ✓（contacts + groups） |
 | filehelper | ✓ | 不适用 |
 
 ---
 
-## 7. 常见问题
+## 8. 常见问题
 
 | 现象 | 处理 |
 |------|------|

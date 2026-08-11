@@ -1,6 +1,8 @@
 package com.nexus.tim.bridge.http
 
 import com.nexus.tim.bridge.state.BridgeState
+import com.nexus.tim.bridge.state.ChatInfo
+import com.nexus.tim.bridge.state.ContactInfo
 import com.nexus.tim.bridge.store.EventStore
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -52,5 +54,30 @@ class TimHttpRouterTest {
                 headers = mapOf("authorization" to "Bearer tok"),
             ).status,
         )
+    }
+
+    @Test
+    fun contacts_and_groups_from_state() {
+        val state = BridgeState(supportedVersion = "4.1.0").apply {
+            hookConnected = true
+            contacts = listOf(
+                ContactInfo("95019432", "FriendA"),
+                ContactInfo("123456", "FriendB"),
+            )
+            groups = listOf(
+                ChatInfo("troop:723765339", "TestGroup", isGroup = true),
+            )
+        }
+        val router = TimHttpRouter(state, EventStore())
+        val contacts = router.handle("GET", "/v1/contacts", emptyMap(), null)
+        assertEquals(200, contacts.status)
+        assertEquals(2, contacts.json!!.getJSONArray("contacts").length())
+        assertEquals("FriendB", contacts.json!!.getJSONArray("contacts").getJSONObject(1).getString("display"))
+
+        val groups = router.handle("GET", "/v1/groups", emptyMap(), null)
+        assertEquals(200, groups.status)
+        assertEquals(1, groups.json!!.getJSONArray("groups").length())
+        assertEquals("troop:723765339", groups.json!!.getJSONArray("groups").getJSONObject(0).getString("chat_id"))
+        assertEquals(true, groups.json!!.getJSONArray("groups").getJSONObject(0).getBoolean("is_group"))
     }
 }

@@ -2,12 +2,15 @@ package com.nexus.tim.bridge.uds
 
 import com.nexus.tim.bridge.push.OutboundHub
 import com.nexus.tim.bridge.state.BridgeState
+import com.nexus.tim.bridge.state.ChatInfo
+import com.nexus.tim.bridge.state.ContactInfo
 import com.nexus.tim.bridge.state.MeInfo
 import com.nexus.tim.bridge.store.BridgeEvent
 import com.nexus.tim.bridge.store.EventStore
 import com.nexus.tim.protocol.TimFrame
 import com.nexus.tim.protocol.TimFrameTypes
 import com.nexus.tim.protocol.TimMsgFields
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.CompletableFuture
@@ -47,6 +50,8 @@ class HookSession(
         state.loggedIn = false
         state.recvHook = false
         state.me = MeInfo()
+        state.contacts = emptyList()
+        state.groups = emptyList()
         pending.forEach { (_, fut) ->
             fut.complete(SendResult(ok = false, error = "hook_disconnected"))
         }
@@ -106,6 +111,8 @@ class HookSession(
             userId = json.optString(TimMsgFields.USER_ID, ""),
             nick = json.optString(TimMsgFields.NICK, ""),
         )
+        state.contacts = parseContacts(json.optJSONArray(TimMsgFields.CONTACTS))
+        state.groups = parseGroups(json.optJSONArray(TimMsgFields.GROUPS))
         val ver = state.timVersion
         if (ver != null && ver != state.supportedVersion) {
             outbound?.alert(
@@ -117,6 +124,41 @@ class HookSession(
             )
         }
         notifyStatus()
+    }
+
+    private fun parseContacts(arr: JSONArray?): List<ContactInfo> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<ContactInfo>(arr.length())
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            val userId = c.optString(TimMsgFields.USER_ID, "")
+            if (userId.isEmpty()) continue
+            out.add(
+                ContactInfo(
+                    userId = userId,
+                    display = c.optString(TimMsgFields.DISPLAY, userId),
+                ),
+            )
+        }
+        return out
+    }
+
+    private fun parseGroups(arr: JSONArray?): List<ChatInfo> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<ChatInfo>(arr.length())
+        for (i in 0 until arr.length()) {
+            val c = arr.optJSONObject(i) ?: continue
+            val chatId = c.optString(TimMsgFields.CHAT_ID, "")
+            if (chatId.isEmpty()) continue
+            out.add(
+                ChatInfo(
+                    chatId = chatId,
+                    title = c.optString(TimMsgFields.TITLE, chatId),
+                    isGroup = true,
+                ),
+            )
+        }
+        return out
     }
 
     private fun handleSendResult(text: String) {

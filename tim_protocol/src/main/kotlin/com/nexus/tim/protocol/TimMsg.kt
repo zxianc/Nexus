@@ -12,10 +12,17 @@ object TimMsgFields {
     const val FROM_DISPLAY = "from_display"
     const val IS_SELF = "is_self"
     const val IS_GROUP = "is_group"
+    const val TITLE = "title"
+    const val DISPLAY = "display"
+    const val MEMBERS = "members"
     const val CHAT_TITLE = "chat_title"
     const val TS = "ts"
     const val TIM_VERSION = "tim_version"
     const val LOGGED_IN = "logged_in"
     const val USER_ID = "user_id"
     const val NICK = "nick"
+    /** Full friends (HELLO / GET /v1/contacts). */
+    const val CONTACTS = "contacts"
+    /** Full group list (HELLO / GET /v1/groups). */
+    const val GROUPS = "groups"
 }

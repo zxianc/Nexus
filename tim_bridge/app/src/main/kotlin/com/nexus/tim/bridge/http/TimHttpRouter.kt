@@ -46,6 +46,8 @@ class TimHttpRouter(
         return when {
             isHealth -> health()
             method == "GET" && path == "/v1/me" -> me()
+            method == "GET" && path == "/v1/contacts" -> contacts()
+            method == "GET" && path == "/v1/groups" -> groups()
             method == "GET" && path == "/v1/events" -> events(query)
             method == "POST" && path == "/v1/messages/text" -> postText(body)
             else -> RouterResponse.json(
@@ -83,6 +85,43 @@ class TimHttpRouter(
                 .put("user_id", state.me.userId)
                 .put("nick", state.me.nick)
                 .put("logged_in", state.loggedIn),
+        )
+    }
+
+    private fun contacts(): RouterResponse {
+        if (!state.hookConnected) {
+            return RouterResponse.json(503, JSONObject().put("ok", false).put("error", "hook_unavailable"))
+        }
+        val arr = JSONArray()
+        for (c in state.contacts) {
+            arr.put(
+                JSONObject()
+                    .put(TimMsgFields.USER_ID, c.userId)
+                    .put(TimMsgFields.DISPLAY, c.display),
+            )
+        }
+        return RouterResponse.json(
+            200,
+            JSONObject().put("ok", true).put(TimMsgFields.CONTACTS, arr),
+        )
+    }
+
+    private fun groups(): RouterResponse {
+        if (!state.hookConnected) {
+            return RouterResponse.json(503, JSONObject().put("ok", false).put("error", "hook_unavailable"))
+        }
+        val arr = JSONArray()
+        for (g in state.groups) {
+            arr.put(
+                JSONObject()
+                    .put(TimMsgFields.CHAT_ID, g.chatId)
+                    .put(TimMsgFields.TITLE, g.title)
+                    .put(TimMsgFields.IS_GROUP, true),
+            )
+        }
+        return RouterResponse.json(
+            200,
+            JSONObject().put("ok", true).put(TimMsgFields.GROUPS, arr),
         )
     }
 

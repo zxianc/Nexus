@@ -4,6 +4,7 @@ import android.app.AndroidAppHelper
 import android.util.Log
 import com.nexus.tim.hook.recv.RecvDispatcher
 import com.nexus.tim.hook.send.LoginUin
+import com.nexus.tim.hook.state.ContactDirectory
 import com.nexus.tim.hook.state.LoginProbe
 import com.nexus.tim.hook.uds.BridgeUdsClient
 import com.nexus.tim.hook.version.SupportedTim
@@ -20,6 +21,7 @@ class MainHook : IXposedHookLoadPackage {
         if (lpparam.processName != SupportedTim.PACKAGE) return
 
         val loginProbe = LoginProbe()
+        val contacts = ContactDirectory(lpparam.classLoader)
         val appContextProvider = {
             try {
                 AndroidAppHelper.currentApplication()?.applicationContext
@@ -31,6 +33,7 @@ class MainHook : IXposedHookLoadPackage {
             appContextProvider = appContextProvider,
             loginProbe = loginProbe,
             hostClassLoader = lpparam.classLoader,
+            contacts = contacts,
         )
         RecvDispatcher(
             classLoader = lpparam.classLoader,
